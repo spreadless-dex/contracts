@@ -48,6 +48,8 @@ pub struct Deposit {
     pub to: Address,
     pub amounts_in: Vec<i128>,
     pub lp_minted: i128,
+    /// LP minted to the beneficiary as the protocol's cut (0 if none).
+    pub protocol_lp: i128,
 }
 
 /// Proportional withdrawal. Topics: `("withdraw", to)`.
@@ -238,21 +240,28 @@ impl LiquidityPoolInterface for LiquidityPool {
                 panic_with_error!(&e, Error::FirstDepositNotFull);
             }
         }
-        let lp_out = match pool::deposit_exact_tokens_in(
+        let quote = match pool::deposit_exact_tokens_in(
             &e,
             &pool,
             e.ledger().timestamp(),
             &amounts_int,
             supply_u64,
         ) {
-            Some(l) => l,
+            Some(q) => q,
             None => panic_with_error!(&e, Error::MathError),
         };
+        let lp_out = quote.lp_out;
+        let protocol_lp = quote.protocol_lp;
 
         if lp_out == 0 || (lp_out as i128) < min_lp_out {
             panic_with_error!(&e, Error::SlippageExceeded);
         }
-        capped::check_cap(&e, lp_out as i128, total_supply);
+        // Cap is checked against everything minted in this call: the depositor's
+        // shares plus the protocol's freshly minted cut.
+        let total_mint = lp_out
+            .checked_add(protocol_lp)
+            .unwrap_or_else(|| panic_with_error!(&e, Error::MathError));
+        capped::check_cap(&e, total_mint as i128, total_supply);
 
         // Pull tokens in and credit reserves (enforcing per-token caps).
         let contract = e.current_contract_address();
@@ -276,6 +285,10 @@ impl LiquidityPoolInterface for LiquidityPool {
         }
 
         Base::mint(&e, &to, lp_out as i128);
+        // The protocol's cut of the imbalance swap fee, minted as LP shares.
+        if protocol_lp > 0 {
+            Base::mint(&e, &pool.beneficiary, protocol_lp as i128);
+        }
         pool::write_pool(&e, &pool);
         pool::extend_instance_ttl(&e);
 
@@ -283,6 +296,7 @@ impl LiquidityPoolInterface for LiquidityPool {
             to,
             amounts_in,
             lp_minted: lp_out as i128,
+            protocol_lp: protocol_lp as i128,
         }
         .publish(&e);
 
@@ -357,7 +371,8 @@ impl LiquidityPoolInterface for LiquidityPool {
 
     /// Burn `lp_amount` shares and withdraw a single token. The burned share
     /// lowers the stable invariant, and the selected token pays swap fees on the
-    /// imbalanced portion of the exit.
+    /// imbalanced portion of the exit. The protocol's cut of that fee is paid to
+    /// the beneficiary in `token_out`; the rest stays in the pool for LPs.
     #[when_not_paused]
     fn withdraw_one_token(
         e: Env,
@@ -396,14 +411,27 @@ impl LiquidityPoolInterface for LiquidityPool {
         if out_raw < min_amount_out {
             panic_with_error!(&e, Error::SlippageExceeded);
         }
+        // The protocol's cut of the swap fee on the imbalanced portion, paid in
+        // the output token (like a swap); the rest of the fee stays for LPs.
+        let protocol_raw = token.to_raw(quote.protocol);
 
         // See `withdraw` above for why exits burn through `Base::update`.
         Base::update(&e, Some(&to), None, lp_amount);
 
+        let contract = e.current_contract_address();
+        let mut removed_int = 0u64;
         if out_raw > 0 {
-            let contract = e.current_contract_address();
-            let sent_int = transfer_out_exact(&e, &token, &contract, &to, out_raw);
-            token.reserve = match token.reserve.checked_sub(sent_int) {
+            removed_int = transfer_out_exact(&e, &token, &contract, &to, out_raw);
+        }
+        if protocol_raw > 0 {
+            let beneficiary = pool.beneficiary.clone();
+            let sent = transfer_out_exact(&e, &token, &contract, &beneficiary, protocol_raw);
+            removed_int = removed_int
+                .checked_add(sent)
+                .unwrap_or_else(|| panic_with_error!(&e, Error::MathError));
+        }
+        if removed_int > 0 {
+            token.reserve = match token.reserve.checked_sub(removed_int) {
                 Some(r) => r,
                 None => panic_with_error!(&e, Error::MathError),
             };

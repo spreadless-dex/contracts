@@ -14,7 +14,8 @@ mod stable;
 
 pub(crate) use lp_exit::{proportional_amounts_out, single_token_amount_out};
 pub use stable::{
-    calc_in_given_out, calc_invariant, calc_out_given_in, calc_pool_token_out_given_exact_tokens_in,
+    calc_in_given_out, calc_invariant, calc_out_given_in,
+    calc_pool_token_out_given_exact_tokens_in, calc_pool_token_out_no_fee,
 };
 
 pub const AMP_PRECISION: u64 = 1_000;

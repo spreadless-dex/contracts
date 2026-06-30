@@ -960,6 +960,7 @@ fn deposit_and_swap_emit_events() {
         to: user.clone(),
         amounts_in,
         lp_minted: lp,
+        protocol_lp: 0, // balanced deposit, no protocol cut
     }
     .to_xdr(&e, &pool_id);
     assert!(e
@@ -986,4 +987,78 @@ fn deposit_and_swap_emit_events() {
         .filter_by_contract(&pool_id)
         .events()
         .contains(&swap_event));
+}
+
+// --- protocol fee split on deposits / single-token withdrawals ---
+
+#[test]
+fn imbalanced_deposit_mints_protocol_lp_without_changing_user_lp() {
+    // Baseline: same operations with no protocol fee.
+    let (e0, user0, _b0, pool0_id, _addr_a0, _addr_b0) = setup_with(0);
+    let pool0 = LiquidityPoolClient::new(&e0, &pool0_id);
+    pool0.deposit(
+        &user0,
+        &vec![&e0, 500_000_000_000i128, 500_000_000_000i128],
+        &0i128,
+    );
+    let user_lp_no_proto = pool0.deposit(&user0, &vec![&e0, 500_000_000_000i128, 0i128], &0i128);
+
+    // 50% protocol fee.
+    let (e, user, beneficiary, pool_id, _addr_a, _addr_b) = setup_with(500_000_000);
+    let pool = LiquidityPoolClient::new(&e, &pool_id);
+    pool.deposit(
+        &user,
+        &vec![&e, 500_000_000_000i128, 500_000_000_000i128],
+        &0i128,
+    );
+    assert_eq!(pool.balance(&beneficiary), 0); // balanced deposit -> no protocol LP
+
+    let user_lp = pool.deposit(&user, &vec![&e, 500_000_000_000i128, 0i128], &0i128);
+
+    // The depositor receives the same LP regardless of the protocol fee...
+    assert_eq!(user_lp, user_lp_no_proto);
+    // ...but the beneficiary now holds protocol LP minted from the imbalance fee.
+    assert!(pool.balance(&beneficiary) > 0);
+}
+
+#[test]
+fn withdraw_one_token_routes_protocol_fee_to_beneficiary() {
+    // Baseline: no protocol fee.
+    let (e0, user0, _b0, pool0_id, addr_a0, _addr_b0) = setup_with(0);
+    let pool0 = LiquidityPoolClient::new(&e0, &pool0_id);
+    let lp0 = pool0.deposit(&user0, &vec![&e0, UNIT, UNIT], &0i128);
+    let out_no_proto = pool0.withdraw_one_token(&user0, &(lp0 / 2), &addr_a0, &0i128);
+
+    // 50% protocol fee.
+    let (e, user, beneficiary, pool_id, addr_a, addr_b) = setup_with(500_000_000);
+    let pool = LiquidityPoolClient::new(&e, &pool_id);
+    let token_a = TokenClient::new(&e, &addr_a);
+    let lp = pool.deposit(&user, &vec![&e, UNIT, UNIT], &0i128);
+    assert_eq!(token_a.balance(&beneficiary), 0);
+
+    let out = pool.withdraw_one_token(&user, &(lp / 2), &addr_a, &0i128);
+
+    // The caller's payout is unchanged by the protocol fee (the cut comes out of
+    // the LP share of the fee, not the caller's output)...
+    assert_eq!(out, out_no_proto);
+    // ...and the beneficiary received its cut of the imbalance fee in token A.
+    assert!(token_a.balance(&beneficiary) > 0);
+    // Reserves stay matched to actual balances after both transfers.
+    assert_pool_balances_match_reserves(&e, &pool, &pool_id, &addr_a, &addr_b);
+}
+
+#[test]
+fn proportional_withdraw_charges_no_protocol_fee() {
+    // Proportional exits are fee-free, so the beneficiary never accrues on them.
+    let (e, user, beneficiary, pool_id, addr_a, addr_b) = setup_with(500_000_000);
+    let pool = LiquidityPoolClient::new(&e, &pool_id);
+    let token_a = TokenClient::new(&e, &addr_a);
+    let token_b = TokenClient::new(&e, &addr_b);
+
+    let lp = pool.deposit(&user, &vec![&e, UNIT, UNIT], &0i128);
+    pool.withdraw(&user, &(lp / 2), &vec![&e, 0i128, 0i128]);
+
+    assert_eq!(token_a.balance(&beneficiary), 0);
+    assert_eq!(token_b.balance(&beneficiary), 0);
+    assert_eq!(pool.balance(&beneficiary), 0);
 }

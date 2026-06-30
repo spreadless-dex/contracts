@@ -259,6 +259,49 @@ pub fn calc_pool_token_out_given_exact_tokens_in(
     }
 }
 
+// LP that would be minted for a deposit if NO swap fee were charged on the
+// imbalanced portion — i.e. the full deposit's invariant growth. The difference
+// from `calc_pool_token_out_given_exact_tokens_in` is the swap fee expressed in
+// LP shares, which sizes the deposit's protocol fee. Only called when a protocol
+// fee is configured (it costs an extra invariant solve), so it is kept separate.
+pub fn calc_pool_token_out_no_fee(
+    e: &Env,
+    amplification: u64,
+    balances: &[u64],
+    amounts_in: &[u64],
+    pool_token_supply: u64,
+    current_invariant: u64,
+    inverse_threshold: Option<u64>,
+) -> Option<u64> {
+    let num_tokens = balances.len();
+    if num_tokens > MAX_TOKENS {
+        return None;
+    }
+
+    let mut new_balances = [0u64; MAX_TOKENS];
+    for i in 0..num_tokens {
+        new_balances[i] = balances[i].checked_add(amounts_in[i])?;
+    }
+
+    let new_invariant = calc_invariant(
+        e,
+        amplification,
+        &new_balances[..num_tokens],
+        inverse_threshold,
+    )?;
+    let invariant_ratio = new_invariant.div_down(current_invariant)?;
+
+    if invariant_ratio > fixed_math::ONE {
+        pool_token_supply.mul_down(invariant_ratio.saturating_sub(fixed_math::ONE))
+    } else {
+        Some(0)
+    }
+}
+
+// Returns `(net_out, fee)`: the amount paid to the caller after the swap fee on
+// the imbalanced (virtual-swap) portion, and the fee withheld. The fee already
+// has to be computed to find `net_out`, so returning it is free; the caller
+// decides how to split it between LPs and the protocol.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn calc_token_out_given_exact_pool_token_in(
     e: &Env,
@@ -269,7 +312,7 @@ pub(super) fn calc_token_out_given_exact_pool_token_in(
     pool_token_supply: u64,
     current_invariant: u64,
     swap_fee: u64,
-) -> Option<u64> {
+) -> Option<(u64, u64)> {
     // Token out, so we round down overall.
 
     let new_invariant = mul_div_up_u64(
@@ -304,9 +347,11 @@ pub(super) fn calc_token_out_given_exact_pool_token_in(
     let taxable_amount = amount_out_without_fee.mul_up(taxable_percentage)?;
     let non_taxable_amount = amount_out_without_fee.saturating_sub(taxable_amount);
 
-    taxable_amount
+    let net_out = taxable_amount
         .mul_down(swap_fee.complement())?
-        .checked_add(non_taxable_amount)
+        .checked_add(non_taxable_amount)?;
+    let fee = amount_out_without_fee.checked_sub(net_out)?;
+    Some((net_out, fee))
 }
 
 // This function calculates the balance of a given token (token_index)

@@ -39,6 +39,14 @@ pub fn output_from_net(swap_fee: u64, protocol_fee: u64, net_out: u64) -> Option
     })
 }
 
+/// The protocol's share of a fee amount: `fee_amount * protocol_fee`, rounded
+/// down. The single policy used everywhere a fee is charged — swaps (fee =
+/// gross − net), single-token withdrawals (fee withheld from the output), and
+/// deposits (fee expressed in LP shares).
+pub fn protocol_share(fee_amount: u64, protocol_fee: u64) -> Option<u64> {
+    fee_amount.mul_down(protocol_fee)
+}
+
 fn protocol_cut(protocol_fee: u64, gross_out: u64, net_out: u64) -> Option<u64> {
-    gross_out.saturating_sub(net_out).mul_down(protocol_fee)
+    protocol_share(gross_out.saturating_sub(net_out), protocol_fee)
 }

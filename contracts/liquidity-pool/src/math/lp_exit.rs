@@ -25,6 +25,7 @@ pub(crate) fn proportional_amounts_out(
     Some(amounts_out)
 }
 
+// Returns `(net_out, fee)` — see `calc_token_out_given_exact_pool_token_in`.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn single_token_amount_out(
     e: &Env,
@@ -34,7 +35,7 @@ pub(crate) fn single_token_amount_out(
     pool_token_amount: u64,
     pool_token_supply: u64,
     swap_fee: u64,
-) -> Option<u64> {
+) -> Option<(u64, u64)> {
     let current_invariant = stable::calc_invariant(e, amplification, balances, None)?;
     stable::calc_token_out_given_exact_pool_token_in(
         e,

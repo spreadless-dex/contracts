@@ -23,10 +23,12 @@
 //!   Stellar SAC assets are 7 decimals → lossless.
 //! - **Fees** (`swap_fee`, `protocol_fee`) are fixed-point where `1e9` == 100%.
 //!   `swap_fee` range: 10_000 (0.001%) ..= 10_000_000 (1%). `protocol_fee` is a
-//!   cut OF the swap fee, range 0 ..= 1e9. The protocol cut is taken on swaps
-//!   only; the swap fee charged on the imbalanced portion of a deposit or a
-//!   single-token withdrawal stays entirely in the pool for LPs (no protocol
-//!   cut).
+//!   cut OF the swap fee, range 0 ..= 1e9. It applies wherever a swap fee is
+//!   charged: swaps, the imbalanced portion of a deposit, and single-token
+//!   withdrawals. The cut is paid in the output token for swaps and single-token
+//!   withdrawals, and as freshly minted LP shares for deposits (a join has no
+//!   single output token). The rest of each fee stays in the pool for LPs;
+//!   proportional withdrawals are fee-free.
 //! - **Amplification** is an integer factor `A` in `[1, 12000]`.
 //! - **LP shares** are the pool contract's own SEP-41 token (9 decimals).
 //! - **Token order / indices**: `tokens` is sorted ascending at init; reserves,
@@ -60,6 +62,9 @@ pub trait LiquidityPoolInterface {
     ///   the StableSwap invariant `D` of the deposited balances.
     /// * Later deposits may be proportional, unbalanced, or single-sided (zeros
     ///   allowed); the swap fee applies only to the imbalanced portion.
+    /// * When a `protocol_fee` is set, its cut of that imbalance fee is minted as
+    ///   additional LP shares to the beneficiary; the depositor's shares are
+    ///   unaffected.
     ///
     /// Reverts: `AmountsLengthMismatch`, `InvalidAmount`, `ZeroDeposit`,
     /// `FirstDepositNotFull`, `SlippageExceeded` (minted < `min_lp_out`),
@@ -79,7 +84,9 @@ pub trait LiquidityPoolInterface {
     /// Burn `lp_amount` of `to`'s LP shares and pay out a single token. The
     /// stable invariant is reduced by the burned share, then the selected token
     /// is withdrawn with swap-fee treatment on the imbalanced portion. Returns
-    /// the raw amount paid.
+    /// the raw amount paid. When a `protocol_fee` is set, its cut of that swap
+    /// fee is paid to the beneficiary in `token_out`; the caller's payout is
+    /// unaffected.
     ///
     /// Reverts: `UnknownToken`, `InvalidAmount`, `SlippageExceeded` (payout <
     /// `min_amount_out`), `MathError`, `TransferAmountMismatch`,

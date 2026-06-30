@@ -10,12 +10,24 @@ use super::fee;
 use super::state::Pool;
 use super::{current_amp, reserves, NormalizedAmounts};
 
+pub struct DepositQuote {
+    /// LP shares minted to the depositor.
+    pub lp_out: u64,
+    /// LP shares minted to the beneficiary as the protocol's cut of the swap fee
+    /// on the imbalanced portion (zero for balanced/first deposits).
+    pub protocol_lp: u64,
+}
+
 pub struct ProportionalWithdrawQuote {
     pub amounts_out: [u64; math::MAX_TOKENS],
 }
 
 pub struct SingleTokenWithdrawQuote {
+    /// Output-token amount paid to the caller (net of the swap fee).
     pub amount_out: u64,
+    /// Output-token amount paid to the beneficiary as the protocol's cut of the
+    /// swap fee on the imbalanced (virtual-swap) portion.
+    pub protocol: u64,
 }
 
 pub struct SwapExactInQuote {
@@ -34,19 +46,25 @@ pub fn deposit_exact_tokens_in(
     now: u64,
     amounts_in: &NormalizedAmounts,
     pool_token_supply: u64,
-) -> Option<u64> {
+) -> Option<DepositQuote> {
     let amp = current_amp(pool, now);
     if amounts_in.len() != pool.tokens.len() as usize {
         return None;
     }
 
     if pool_token_supply == 0 {
-        return math::calc_invariant(e, amp, amounts_in.as_slice(), None).filter(|d| *d > 0);
+        // First deposit: LP minted == invariant D, no fee, no protocol cut.
+        let lp_out =
+            math::calc_invariant(e, amp, amounts_in.as_slice(), None).filter(|d| *d > 0)?;
+        return Some(DepositQuote {
+            lp_out,
+            protocol_lp: 0,
+        });
     }
 
     let reserves = reserves(pool);
     let current_invariant = math::calc_invariant(e, amp, reserves.as_slice(), None)?;
-    math::calc_pool_token_out_given_exact_tokens_in(
+    let lp_out = math::calc_pool_token_out_given_exact_tokens_in(
         e,
         amp,
         reserves.as_slice(),
@@ -55,7 +73,31 @@ pub fn deposit_exact_tokens_in(
         current_invariant,
         pool.swap_fee,
         None,
-    )
+    )?;
+
+    // The swap fee on the imbalanced portion is baked into a lower `lp_out` and
+    // stays in the pool. Route the protocol's cut of it to the beneficiary as
+    // freshly minted LP, sized by the LP the fee suppressed. Only computed when a
+    // protocol fee is configured (it costs an extra invariant solve).
+    let protocol_lp = if pool.protocol_fee > 0 {
+        let lp_no_fee = math::calc_pool_token_out_no_fee(
+            e,
+            amp,
+            reserves.as_slice(),
+            amounts_in.as_slice(),
+            pool_token_supply,
+            current_invariant,
+            None,
+        )?;
+        fee::protocol_share(lp_no_fee.saturating_sub(lp_out), pool.protocol_fee)?
+    } else {
+        0
+    };
+
+    Some(DepositQuote {
+        lp_out,
+        protocol_lp,
+    })
 }
 
 pub fn withdraw_proportional(
@@ -80,7 +122,7 @@ pub fn withdraw_one_token(
 ) -> Option<SingleTokenWithdrawQuote> {
     let amp = current_amp(pool, now);
     let reserves = reserves(pool);
-    let amount_out = math::single_token_amount_out(
+    let (net_out, fee_amount) = math::single_token_amount_out(
         e,
         amp,
         reserves.as_slice(),
@@ -89,8 +131,12 @@ pub fn withdraw_one_token(
         pool_token_supply,
         pool.swap_fee,
     )?;
+    let protocol = fee::protocol_share(fee_amount, pool.protocol_fee)?;
 
-    Some(SingleTokenWithdrawQuote { amount_out })
+    Some(SingleTokenWithdrawQuote {
+        amount_out: net_out,
+        protocol,
+    })
 }
 
 pub fn swap_exact_in(
