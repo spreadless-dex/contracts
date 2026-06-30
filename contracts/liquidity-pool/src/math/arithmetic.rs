@@ -34,6 +34,14 @@ pub(crate) fn mul_div_down_u64(value: u64, mul: u64, div: u64) -> Option<u64> {
     u64::try_from(product / div as u128).ok()
 }
 
+// Sum of a slice, returning None on overflow instead of trapping. The math
+// guarantees each individual balance fits in u64 (<= MAX_SAFE_BALANCE), but the
+// sum of post-deposit balances across up to MAX_TOKENS can exceed u64::MAX; this
+// degrades that case to a clean `None` (-> MathError) like the other helpers.
+pub(super) fn checked_sum(values: &[u64]) -> Option<u64> {
+    values.iter().try_fold(0u64, |acc, &v| acc.checked_add(v))
+}
+
 pub(super) fn u256(e: &Env, value: u64) -> U256 {
     U256::from_u128(e, value as u128)
 }

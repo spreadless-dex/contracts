@@ -1,7 +1,7 @@
 use soroban_sdk::{Env, U256};
 
 use super::arithmetic::{
-    checked_sub, div_up, mul_div_down, mul_div_up, mul_div_up_u64, to_u64, u256,
+    checked_sub, checked_sum, div_up, mul_div_down, mul_div_up, mul_div_up_u64, to_u64, u256,
 };
 use super::fixed_math::{self, FixedComplement, FixedDiv, FixedMul};
 use super::{AMP_PRECISION, BALANCE_THRESHOLD, DEFAULT_INV_THRESHOLD, MAX_TOKENS};
@@ -24,7 +24,7 @@ pub fn calc_invariant(
     // n = number of tokens                                                                      //
 
     // Always round down, to match Vyper's arithmetic (which always truncates).
-    let sum: u64 = balances.iter().sum(); // S in the Curve version
+    let sum = checked_sum(balances)?; // S in the Curve version
 
     if sum == 0 {
         return Some(0);
@@ -217,7 +217,7 @@ pub fn calc_pool_token_out_given_exact_tokens_in(
 
     // First loop calculates the sum of all token balances, which will be used to calculate
     // the current weights of each token, relative to this sum
-    let sum: u64 = balances.iter().sum();
+    let sum = checked_sum(balances)?;
 
     // Calculate the weighted balance ratio without considering fees
     let mut balance_ratios_with_fee = [0u64; MAX_TOKENS];
@@ -298,7 +298,7 @@ pub(super) fn calc_token_out_given_exact_pool_token_in(
 
     // First calculate the sum of all token balances, which will be used to calculate
     // the current weight of each token
-    let sum: u64 = balances.iter().sum();
+    let sum = checked_sum(balances)?;
 
     // We can now compute how much excess balance is being withdrawn as a result of the virtual swaps, which result
     // in swap fees.
