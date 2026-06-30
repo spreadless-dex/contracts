@@ -31,7 +31,7 @@ use crate::pool::{self, Pool, PoolToken};
 // Metadata that is added on to the WASM custom section
 contractmeta!(
     key = "Description",
-    val = "Multi-asset StableSwap AMM (Stabble-style); the pool is its own LP token"
+    val = "Multi-asset StableSwap AMM; the pool is its own LP token"
 );
 
 // --- contract events ---

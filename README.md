@@ -44,9 +44,7 @@ beneficiary, while the rest remains in the pool for LPs.
 
 The protocol-fee cut is taken on swaps only. The swap fee charged on the
 imbalanced portion of a deposit or a single-token withdrawal stays entirely in
-the pool for LPs; the beneficiary does not receive a cut of it. This mirrors
-Stabble's stable-swap, where only the swap instruction pays a beneficiary — its
-deposit and withdraw instructions carry no beneficiary/fee-receiver account.
+the pool for LPs; the beneficiary does not receive a cut of it.
 
 The contract verifies token balance deltas during transfers. Fee-on-transfer or
 otherwise non-standard token behavior is rejected instead of being silently

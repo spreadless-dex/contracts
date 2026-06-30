@@ -10,7 +10,6 @@ use super::MAX_TOKENS;
 
 // Proportional amounts out to return for an exact LP amount in. Rounds down,
 // so the pool never pays out more than the burned shares back.
-// See: stabbleorg/amm-sdk base_pool_math.rs (Balancer BasePoolMath._computeProportionalAmountsOut)
 pub(crate) fn proportional_amounts_out(
     balances: &[u64],
     pool_token_supply: u64,
@@ -53,8 +52,8 @@ pub(crate) fn single_token_amount_out(
 mod tests {
     use super::*;
 
-    // Reference-parity test ported from stabbleorg/amm-sdk (libraries/math,
-    // base_pool_math). Same inputs and exact expected outputs as upstream.
+    // Parity test with fixed inputs and known expected outputs, locking the
+    // proportional-exit math to exact values.
     #[test]
     fn test_proportional_amounts_out() {
         let balances = [5_000_000_000u64, 3_000_000_000];

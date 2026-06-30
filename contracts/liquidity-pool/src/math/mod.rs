@@ -1,6 +1,6 @@
-// Stable-swap math, ported from Stabble (a Balancer-V2 fork): `stable_math.rs`,
-// `fixed_math.rs`, and the `bn` U192 big-integer crate. The shared constants and
-// the public surface live here; the implementation is split across submodules:
+// Stable-swap math: the StableSwap invariant plus the swap/join/exit formulas.
+// The shared constants and the public surface live here; the implementation is
+// split across submodules:
 //
 //   stable      - the invariant + swap/join/exit formulas (the `calc_*` fns)
 //   lp_exit     - proportional and single-token LP exit quotes

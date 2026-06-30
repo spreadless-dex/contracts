@@ -1,6 +1,5 @@
-// Fixed-point helpers (Balancer-style), scaled so that 1.0 == ONE. On Solana
-// these lived in a separate `fixed_math` crate; ported here to pure u64/u128
-// arithmetic so the module is self-contained under Soroban's `no_std` runtime.
+// Fixed-point helpers, scaled so that 1.0 == ONE. Pure u64/u128 arithmetic so
+// the module is self-contained under Soroban's `no_std` runtime.
 
 // 100% in fixed-point. Matches the pool's internal 9-decimal balance scale
 // (ONE = 10^INTERNAL_DECIMALS) and the fee-rate scale.

@@ -6,10 +6,8 @@ use super::arithmetic::{
 use super::fixed_math::{self, FixedComplement, FixedDiv, FixedMul};
 use super::{AMP_PRECISION, BALANCE_THRESHOLD, DEFAULT_INV_THRESHOLD, MAX_TOKENS};
 
-// StableMath._calculateInvariant
 // Computes the invariant given the current balances, using the Newton-Raphson approximation.
 // The amplification parameter equals: A n^(n-1)
-// See: https://github.com/stabbleorg/balancer-v2-monorepo/blob/master/pkg/pool-stable/contracts/StableMath.sol#L57-L120
 pub fn calc_invariant(
     e: &Env,
     amplification: u64,
@@ -92,7 +90,6 @@ pub fn calc_invariant(
 
 // Computes how many tokens can be taken out of a pool if `token_amount_in` are sent, given the current balances.
 // The amplification parameter equals: A n^(n-1)
-// See: https://github.com/stabbleorg/balancer-v2-monorepo/blob/master/pkg/pool-stable/contracts/StableMath.sol#L124-L159
 pub fn calc_out_given_in(
     e: &Env,
     amplification: u64,
@@ -146,7 +143,6 @@ pub fn calc_out_given_in(
 // Computes how many tokens must be sent to a pool if `token_amount_out` are sent given the
 // current balances, using the Newton-Raphson approximation.
 // The amplification parameter equals: A n^(n-1)
-// See: https://github.com/stabbleorg/balancer-v2-monorepo/blob/master/pkg/pool-stable/contracts/StableMath.sol#L164-L199
 pub fn calc_in_given_out(
     e: &Env,
     amplification: u64,
@@ -196,7 +192,6 @@ pub fn calc_in_given_out(
     final_balance_in.checked_sub(balance_in)?.checked_add(1)
 }
 
-// See: https://github.com/stabbleorg/balancer-v2-monorepo/blob/master/pkg/pool-stable/contracts/StableMath.sol#L201-L255
 #[allow(clippy::too_many_arguments)]
 pub fn calc_pool_token_out_given_exact_tokens_in(
     e: &Env,
@@ -264,7 +259,6 @@ pub fn calc_pool_token_out_given_exact_tokens_in(
     }
 }
 
-// See: https://github.com/stabbleorg/balancer-v2-monorepo/blob/master/pkg/pool-stable/contracts/StableMath.sol#L354-L395
 #[allow(clippy::too_many_arguments)]
 pub(super) fn calc_token_out_given_exact_pool_token_in(
     e: &Env,
@@ -317,7 +311,6 @@ pub(super) fn calc_token_out_given_exact_pool_token_in(
 
 // This function calculates the balance of a given token (token_index)
 // given all the other balances and the invariant
-// See: https://github.com/stabbleorg/balancer-v2-monorepo/blob/master/pkg/pool-stable/contracts/StableMath.sol#L399-L449
 fn get_token_balance_given_invariant_n_all_other_balances(
     e: &Env,
     amplification: u64,
