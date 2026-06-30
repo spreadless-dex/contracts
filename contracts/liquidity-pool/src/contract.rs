@@ -184,6 +184,16 @@ impl LiquidityPool {
 
 // All other entrypoints are the `LiquidityPoolInterface` (see `interface.rs`);
 // implementing it here makes any signature drift a compile error.
+//
+// Reentrancy: the mutating ops below read pool state, make external token
+// transfers, then write the updated state back at the end. That read-then-write-
+// around-external-calls shape would be a cross-function reentrancy hazard (a
+// re-entered call's state write could be clobbered) on a platform that allowed
+// reentrancy — but Soroban disallows contract reentrancy at the host level, so a
+// pool token that tried to call back in during a transfer would simply trap.
+// This contract therefore relies on that host guarantee (and on pool tokens
+// being well-behaved SEP-41/SAC contracts, fixed at construction); it does not
+// add a separate reentrancy guard.
 #[contractimpl(contracttrait)]
 impl LiquidityPoolInterface for LiquidityPool {
     #[when_not_paused]
