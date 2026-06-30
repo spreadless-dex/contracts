@@ -23,7 +23,10 @@
 //!   Stellar SAC assets are 7 decimals → lossless.
 //! - **Fees** (`swap_fee`, `protocol_fee`) are fixed-point where `1e9` == 100%.
 //!   `swap_fee` range: 10_000 (0.001%) ..= 10_000_000 (1%). `protocol_fee` is a
-//!   cut OF the swap fee, range 0 ..= 1e9.
+//!   cut OF the swap fee, range 0 ..= 1e9. The protocol cut is taken on swaps
+//!   only; the swap fee charged on the imbalanced portion of a deposit or a
+//!   single-token withdrawal stays entirely in the pool for LPs (no protocol
+//!   cut, by design).
 //! - **Amplification** is an integer factor `A` in `[1, 12000]`.
 //! - **LP shares** are the pool contract's own SEP-41 token (9 decimals).
 //! - **Token order / indices**: `tokens` is sorted ascending at init; reserves,

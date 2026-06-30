@@ -42,6 +42,12 @@ Swaps support both exact-input and exact-output flows. The swap fee is charged o
 the output amount. A configured protocol-fee share of that fee is sent to the
 beneficiary, while the rest remains in the pool for LPs.
 
+The protocol-fee cut is taken on swaps only. The swap fee charged on the
+imbalanced portion of a deposit or a single-token withdrawal stays entirely in
+the pool for LPs; the beneficiary does not receive a cut of it. This is a
+deliberate simplification relative to Balancer/Stabble, which also route a
+protocol cut on joins and exits.
+
 The contract verifies token balance deltas during transfers. Fee-on-transfer or
 otherwise non-standard token behavior is rejected instead of being silently
 credited to reserves.
