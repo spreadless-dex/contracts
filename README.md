@@ -144,6 +144,12 @@ Build the contract:
 make build
 ```
 
+Generate TypeScript bindings from the built wasm:
+
+```sh
+make bindings
+```
+
 Run the test suite:
 
 ```sh

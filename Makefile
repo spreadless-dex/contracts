@@ -3,6 +3,7 @@
 # Common targets:
 #   make setup      install the wasm target + a contract-safe rust toolchain
 #   make build      compile the contract to wasm
+#   make bindings   generate TypeScript contract bindings
 #   make test       run the unit + integration test suite (native)
 #   make optimize   shrink the built wasm (runs build first)
 #   make deploy     deploy + initialize on a network (see "deploy" below)
@@ -37,6 +38,7 @@ TARGET_TRIPLE  ?= wasm32v1-none
 WASM_NAME      := liquidity_pool
 RELEASE_DIR    := target/$(TARGET_TRIPLE)/release
 WASM           := $(RELEASE_DIR)/$(WASM_NAME).wasm
+BINDINGS_DIR   ?= bindings/liquidity-pool
 
 # --- constructor arguments for `make deploy` (2-token template) ---
 # OWNER/TOKEN_A/TOKEN_B are required; TOKEN_A and TOKEN_B must be SEP-41/SAC
@@ -52,7 +54,7 @@ MAX_CAP        ?= 10000000000000000        # 1e16 raw, per token
 LP_MAX_SUPPLY  ?= 1000000000000000000      # 1e18
 
 .DEFAULT_GOAL := build
-.PHONY: all build test optimize deploy setup keys fund clean fmt fmt-check lint help
+.PHONY: all build bindings test optimize deploy setup keys fund clean fmt fmt-check lint help
 
 ## all: build then test
 all: build test
@@ -61,6 +63,14 @@ all: build test
 build:
 	rustup run $(RUST_VERSION) $(STELLAR) contract build
 	@echo "built: $(WASM)"
+
+## bindings: generate TypeScript contract bindings from the built wasm
+bindings: build
+	$(STELLAR) contract bindings typescript \
+		--wasm $(WASM) \
+		--output-dir $(BINDINGS_DIR) \
+		--overwrite
+	@echo "bindings: $(BINDINGS_DIR)"
 
 ## test: run the unit + integration test suite (native)
 test:
