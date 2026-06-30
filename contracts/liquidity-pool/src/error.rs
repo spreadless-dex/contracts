@@ -30,4 +30,7 @@ pub enum Error {
     UnknownToken = 17,           // an address is not one of the pool's tokens
     SameToken = 18,              // token_in == token_out
     TransferAmountMismatch = 19, // token balance delta differed from requested transfer
+
+    // --- LP shares ---
+    DirectLpBurnDisabled = 20, // LP exits must use withdraw so reserves are updated
 }

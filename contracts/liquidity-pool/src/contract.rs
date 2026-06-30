@@ -677,8 +677,9 @@ fn raw_delta_to_internal(e: &Env, token: &PoolToken, delta: i128) -> u64 {
 //
 // The pool is its own SEP-41 LP token, backed by OpenZeppelin's fungible `Base`.
 // The operations above mint/burn shares via `Base::mint` / `Base::update`; this
-// `Base`-backed default impl supplies the full SEP-41 surface (transfer,
-// allowance, balance, metadata, burn).
+// `Base`-backed default impl supplies transfers, allowance, balances, and
+// metadata. Direct burns are disabled below because LP exits must update pool
+// reserves through `withdraw`.
 
 #[contractimpl(contracttrait)]
 impl FungibleToken for LiquidityPool {
@@ -686,7 +687,15 @@ impl FungibleToken for LiquidityPool {
 }
 
 #[contractimpl(contracttrait)]
-impl FungibleBurnable for LiquidityPool {}
+impl FungibleBurnable for LiquidityPool {
+    fn burn(e: &Env, _from: Address, _amount: i128) {
+        panic_with_error!(e, Error::DirectLpBurnDisabled);
+    }
+
+    fn burn_from(e: &Env, _spender: Address, _from: Address, _amount: i128) {
+        panic_with_error!(e, Error::DirectLpBurnDisabled);
+    }
+}
 
 // 2-step ownership (get_owner, transfer_ownership, accept_ownership,
 // renounce_ownership). The constructor seeds the owner via `ownable::set_owner`;

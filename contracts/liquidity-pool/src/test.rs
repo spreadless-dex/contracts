@@ -805,6 +805,28 @@ fn lp_token_transfer_and_approve() {
 }
 
 #[test]
+#[should_panic]
+fn direct_lp_burn_reverts() {
+    let (e, user, pool_id, _a, _b) = setup();
+    let pool = LiquidityPoolClient::new(&e, &pool_id);
+    let lp = pool.deposit(&user, &vec![&e, UNIT, UNIT], &0i128);
+
+    pool.burn(&user, &(lp / 2));
+}
+
+#[test]
+#[should_panic]
+fn direct_lp_burn_from_reverts() {
+    let (e, user, pool_id, _a, _b) = setup();
+    let pool = LiquidityPoolClient::new(&e, &pool_id);
+    let lp = pool.deposit(&user, &vec![&e, UNIT, UNIT], &0i128);
+
+    let spender = Address::generate(&e);
+    pool.approve(&user, &spender, &(lp / 2), &10_000u32);
+    pool.burn_from(&spender, &user, &(lp / 2));
+}
+
+#[test]
 fn lp_token_decimals_is_nine() {
     let (e, _user, pool_id, _a, _b) = setup();
     let pool = LiquidityPoolClient::new(&e, &pool_id);

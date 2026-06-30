@@ -174,9 +174,12 @@ pub trait LiquidityPoolInterface {
 //   approve(e, owner: Address, spender: Address, amount: i128, live_until_ledger: u32)
 //   transfer(e, from: Address, to: Address, amount: i128)
 //   transfer_from(e, spender: Address, from: Address, to: Address, amount: i128)
-//   burn(e, from: Address, amount: i128)
-//   burn_from(e, spender: Address, from: Address, amount: i128)
+//   burn(e, from: Address, amount: i128)                         // always reverts
+//   burn_from(e, spender: Address, from: Address, amount: i128)   // always reverts
 //   decimals(e) -> u32          // == 9
 //   name(e) -> String
 //   symbol(e) -> String
+//
+// LP exits must use `withdraw`; direct burns are disabled so total supply cannot
+// be reduced without updating reserves.
 // ---------------------------------------------------------------------------
