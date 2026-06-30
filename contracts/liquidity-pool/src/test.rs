@@ -1062,3 +1062,37 @@ fn proportional_withdraw_charges_no_protocol_fee() {
     assert_eq!(token_b.balance(&beneficiary), 0);
     assert_eq!(pool.balance(&beneficiary), 0);
 }
+
+// An existing LP is not harmed when a third party makes an imbalanced deposit:
+// they earn a share of that deposit's swap fee. The protocol fee reduces that
+// share (the protocol skims its cut) but never reverses it into a loss of
+// principal — the freshly minted protocol LP cannot exceed the fee itself.
+#[test]
+fn existing_lp_keeps_principal_when_third_party_deposits() {
+    // Total tokens (par sum) an initial LP recovers after a third party makes a
+    // large single-sided deposit, for a given protocol fee.
+    fn recovered(protocol_fee: u64) -> i128 {
+        let (e, alice, _ben, pool_id, addr_a, _addr_b) = setup_with(protocol_fee);
+        let pool = LiquidityPoolClient::new(&e, &pool_id);
+        let lp_a = pool.deposit(&alice, &vec![&e, UNIT, UNIT], &0i128);
+
+        let bob = Address::generate(&e);
+        StellarAssetClient::new(&e, &addr_a).mint(&bob, &(2 * UNIT));
+        pool.deposit(&bob, &vec![&e, 2 * UNIT, 0i128], &0i128);
+
+        let out = pool.withdraw(&alice, &lp_a, &vec![&e, 0i128, 0i128]);
+        out.get(0).unwrap() + out.get(1).unwrap()
+    }
+
+    let deposited = 2 * UNIT;
+    let no_proto = recovered(0);
+    let with_proto = recovered(500_000_000); // 50%
+
+    // The initial LP comes out ahead of their deposit either way — they earn a
+    // slice of the new depositor's fee, not a loss.
+    assert!(no_proto > deposited);
+    assert!(with_proto > deposited);
+    // The protocol's cut only trims that slice; it never pushes the LP below
+    // where they'd be with no protocol fee.
+    assert!(with_proto <= no_proto);
+}
