@@ -26,7 +26,8 @@
 //!   cut OF the swap fee, range 0 ..= 1e9. The protocol cut is taken on swaps
 //!   only; the swap fee charged on the imbalanced portion of a deposit or a
 //!   single-token withdrawal stays entirely in the pool for LPs (no protocol
-//!   cut, by design).
+//!   cut). This matches Stabble's stable-swap, whose deposit/withdraw
+//!   instructions have no beneficiary account — only its swap pays one.
 //! - **Amplification** is an integer factor `A` in `[1, 12000]`.
 //! - **LP shares** are the pool contract's own SEP-41 token (9 decimals).
 //! - **Token order / indices**: `tokens` is sorted ascending at init; reserves,
