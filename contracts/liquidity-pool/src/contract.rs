@@ -589,6 +589,9 @@ impl LiquidityPoolInterface for LiquidityPool {
         }
         let mut pool = pool::read_pool(&e);
         let now = e.ledger().timestamp();
+        // Re-seed the ramp from the current factor. Re-ramping mid-ramp floors
+        // the in-progress interpolated factor to an integer, which can drop a
+        // sub-unit fraction — negligible, since `A` is an integer parameter.
         let current_factor = (pool::current_amp(&pool, now) / AMP_PRECISION) as u32;
         pool.amp_initial_factor = current_factor;
         pool.amp_target_factor = target_factor;

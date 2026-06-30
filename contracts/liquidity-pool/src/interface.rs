@@ -31,7 +31,7 @@
 //! - **LP shares** are the pool contract's own SEP-41 token (9 decimals).
 //! - **Token order / indices**: `tokens` is sorted ascending at init; reserves,
 //!   `amounts_in`, and `min_amounts_out` are all in that order.
-//! - Failures revert with a typed `Error` (codes 1..=18, see `error.rs`);
+//! - Failures revert with a typed `Error` (codes 1..=20, see `error.rs`);
 //!   missing authorization reverts with a host auth error.
 
 // The contract implements this trait (for wasm + tests), but a plain host

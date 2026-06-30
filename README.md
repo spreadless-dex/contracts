@@ -215,3 +215,9 @@ make keys SOURCE=default NETWORK=testnet
 - Reserve caps and LP supply caps are enforced on-chain.
 - Pausing blocks deposits, withdrawals, and swaps, but does not disable view or
   admin methods.
+- There is no minimum-liquidity lock. The usual first-depositor inflation attack
+  is mitigated structurally instead: reserves are tracked internally (direct
+  token donations do not change them), the first deposit must fund every token,
+  and the LP shares minted on it equal the invariant `D` rather than a
+  manipulable share price. A dust-sized first deposit is still discouraged, as it
+  can make early share-math rounding coarse.
