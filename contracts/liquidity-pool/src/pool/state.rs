@@ -50,11 +50,11 @@ impl PoolToken {
         to_internal(raw, self.scaling_factor, self.scaling_up)
     }
 
-    pub fn from_internal(&self, internal: u64) -> i128 {
+    pub fn to_raw(&self, internal: u64) -> i128 {
         from_internal(internal, self.scaling_factor, self.scaling_up)
     }
 
-    pub fn from_internal_up(&self, internal: u64) -> i128 {
+    pub fn to_raw_up(&self, internal: u64) -> i128 {
         from_internal_up(internal, self.scaling_factor, self.scaling_up)
     }
 }
@@ -85,22 +85,18 @@ pub fn extend_instance_ttl(e: &Env) {
 /// Returns `(array, num_tokens)`; callers pass `&array[..num_tokens]`.
 pub fn reserves(pool: &Pool) -> ([u64; MAX_TOKENS], usize) {
     let mut arr = [0u64; MAX_TOKENS];
-    let mut n = 0usize;
-    for token in pool.tokens.iter() {
+    for (n, token) in pool.tokens.iter().enumerate() {
         arr[n] = token.reserve;
-        n += 1;
     }
-    (arr, n)
+    (arr, pool.tokens.len() as usize)
 }
 
 /// Index of `token` within the pool, or `None` if it isn't a pool token.
 pub fn token_index(pool: &Pool, token: &Address) -> Option<usize> {
-    let mut i = 0usize;
-    for t in pool.tokens.iter() {
+    for (i, t) in pool.tokens.iter().enumerate() {
         if &t.token == token {
             return Some(i);
         }
-        i += 1;
     }
     None
 }

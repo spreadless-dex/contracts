@@ -197,6 +197,7 @@ pub fn calc_in_given_out(
 }
 
 // See: https://github.com/stabbleorg/balancer-v2-monorepo/blob/master/pkg/pool-stable/contracts/StableMath.sol#L201-L255
+#[allow(clippy::too_many_arguments)]
 pub fn calc_pool_token_out_given_exact_tokens_in(
     e: &Env,
     amplification: u64,
@@ -235,20 +236,18 @@ pub fn calc_pool_token_out_given_exact_tokens_in(
     // Second loop calculates new amounts in, taking into account the fee on the percentage excess
     let mut new_balances = [0u64; MAX_TOKENS];
     for i in 0..num_tokens {
-        let amount_in_without_fee;
-
         // Check if the balance ratio is greater than the ideal ratio to charge fees or not
-        if balance_ratios_with_fee[i] > invariant_ratio_with_fees {
+        let amount_in_without_fee = if balance_ratios_with_fee[i] > invariant_ratio_with_fees {
             let non_taxable_amount =
                 balances[i].mul_down(invariant_ratio_with_fees.checked_sub(fixed_math::ONE)?)?;
             let taxable_amount = amounts_in[i].checked_sub(non_taxable_amount)?;
 
-            amount_in_without_fee = taxable_amount
+            taxable_amount
                 .mul_down(swap_fee.complement())?
-                .checked_add(non_taxable_amount)?;
+                .checked_add(non_taxable_amount)?
         } else {
-            amount_in_without_fee = amounts_in[i];
-        }
+            amounts_in[i]
+        };
 
         new_balances[i] = balances[i].checked_add(amount_in_without_fee)?;
     }
@@ -266,6 +265,7 @@ pub fn calc_pool_token_out_given_exact_tokens_in(
 }
 
 // See: https://github.com/stabbleorg/balancer-v2-monorepo/blob/master/pkg/pool-stable/contracts/StableMath.sol#L354-L395
+#[allow(clippy::too_many_arguments)]
 pub fn calc_token_out_given_exact_pool_token_in(
     e: &Env,
     amplification: u64,
@@ -339,10 +339,10 @@ fn get_token_balance_given_invariant_n_all_other_balances(
 
     let mut sum = balances[0];
     let mut p = u256(e, balances[0].checked_mul(num_tokens)?);
-    for i in 1..balances.len() {
-        let p_i = u256(e, balances[i].checked_mul(num_tokens)?);
+    for &balance in balances.iter().skip(1) {
+        let p_i = u256(e, balance.checked_mul(num_tokens)?);
         p = mul_div_down(&p, &p_i, &invariant, &zero)?;
-        sum = sum.checked_add(balances[i])?;
+        sum = sum.checked_add(balance)?;
     }
 
     // No need to use safe math, based on the loop above `sum` is greater than or equal to `balances[token_index]`

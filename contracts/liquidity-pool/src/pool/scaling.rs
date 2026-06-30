@@ -57,7 +57,7 @@ pub fn from_internal_up(internal: u64, scaling_factor: u64, scaling_up: bool) ->
     if scaling_up {
         // ceil(internal / scaling_factor); the addition can't overflow u64 for
         // in-range balances (internal <= MAX_SAFE_BALANCE, factor <= 1e9).
-        ((internal + scaling_factor - 1) / scaling_factor) as i128
+        internal.div_ceil(scaling_factor) as i128
     } else {
         (internal as i128) * (scaling_factor as i128)
     }

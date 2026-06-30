@@ -66,10 +66,6 @@ impl FixedDiv for u64 {
 
 impl FixedComplement for u64 {
     fn complement(self) -> u64 {
-        if self < ONE {
-            ONE - self
-        } else {
-            0
-        }
+        ONE.saturating_sub(self)
     }
 }

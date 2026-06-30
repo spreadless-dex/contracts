@@ -1,5 +1,3 @@
-#![cfg(test)]
-
 use soroban_sdk::{
     contract, contractimpl, contracttype,
     testutils::{Address as _, Ledger as _},

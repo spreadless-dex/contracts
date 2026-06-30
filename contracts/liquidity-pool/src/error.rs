@@ -5,6 +5,7 @@ use soroban_sdk::contracterror;
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(u32)]
+#[allow(clippy::enum_variant_names)]
 pub enum Error {
     // --- initialization ---
     InvalidTokenCount = 1,  // not in 2..=MAX_TOKENS

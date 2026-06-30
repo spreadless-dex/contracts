@@ -18,7 +18,7 @@
 //!
 //! ## Conventions
 //! - **Amounts** are in each token's own raw on-chain units (`i128`, must be
-//!   >= 0). Balances are tracked internally at 9 decimals, so tokens with MORE
+//!   nonnegative). Balances are tracked internally at 9 decimals, so tokens with MORE
 //!   than 9 decimals lose sub-9-decimal precision (truncated toward the pool).
 //!   Stellar SAC assets are 7 decimals → lossless.
 //! - **Fees** (`swap_fee`, `protocol_fee`) are fixed-point where `1e9` == 100%.

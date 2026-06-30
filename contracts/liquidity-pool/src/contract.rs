@@ -12,7 +12,7 @@
 // exported via the macro for wasm + tests but unreachable in a plain host
 // `cargo build` — which makes their private helpers (e.g. `commit_swap`) look
 // dead. Silence that here; the wasm + test builds are warning-clean.
-#![allow(dead_code)]
+#![allow(dead_code, clippy::too_many_arguments)]
 
 use soroban_sdk::{
     contract, contractimpl, contractmeta, panic_with_error, token, Address, Env, MuxedAddress,
@@ -72,7 +72,7 @@ impl LiquidityPool {
         if !pool::is_valid_amp_factor(amp_factor) {
             panic_with_error!(&e, Error::InvalidAmpFactor);
         }
-        if swap_fee < MIN_SWAP_FEE || swap_fee > MAX_SWAP_FEE {
+        if !(MIN_SWAP_FEE..=MAX_SWAP_FEE).contains(&swap_fee) {
             panic_with_error!(&e, Error::InvalidSwapFee);
         }
         if protocol_fee > math::fixed_math::ONE {
@@ -173,10 +173,8 @@ impl LiquidityPoolInterface for LiquidityPool {
 
         let lp_out: u64 = if total_supply == 0 {
             // First deposit: every token must be funded; LP minted = invariant D.
-            for k in 0..nn {
-                if amounts_int[k] == 0 {
-                    panic_with_error!(&e, Error::FirstDepositNotFull);
-                }
+            if amounts_int[..nn].contains(&0) {
+                panic_with_error!(&e, Error::FirstDepositNotFull);
             }
             match math::calc_invariant(&e, amp, &amounts_int[..nn], None) {
                 Some(d) if d > 0 => d,
@@ -217,7 +215,7 @@ impl LiquidityPoolInterface for LiquidityPool {
                 let mut t = pool.tokens.get(i).unwrap();
                 // For >9-dec tokens this is the input truncated to 9-dec
                 // precision, so no sub-precision dust is stranded in the pool.
-                let transfer_in = t.from_internal(amt_int);
+                let transfer_in = t.to_raw(amt_int);
                 let received_int = transfer_in_exact(&e, &t, &to, &contract, transfer_in);
                 let new_reserve = match t.reserve.checked_add(received_int) {
                     Some(r) if r <= t.max_cap => r,
@@ -273,7 +271,7 @@ impl LiquidityPoolInterface for LiquidityPool {
                 Some(o) => o,
                 None => panic_with_error!(&e, Error::MathError),
             };
-            let out_raw = t.from_internal(out_int);
+            let out_raw = t.to_raw(out_int);
             if out_raw < min_amounts_out.get(i).unwrap() {
                 panic_with_error!(&e, Error::SlippageExceeded);
             }
@@ -319,7 +317,7 @@ impl LiquidityPoolInterface for LiquidityPool {
             .filter(|a| *a > 0)
             .unwrap_or_else(|| panic_with_error!(&e, Error::InvalidAmount));
         // Pull exactly what we credit (lossless for <= 9-decimal tokens).
-        let in_raw = t_in.from_internal(amount_in_int);
+        let in_raw = t_in.to_raw(amount_in_int);
 
         let amp = pool::current_amp(&pool, e.ledger().timestamp());
         let (reserves, n) = pool::reserves(&pool);
@@ -332,12 +330,23 @@ impl LiquidityPoolInterface for LiquidityPool {
         let net_out = net_out_after_fee(&e, pool.swap_fee, out_without_fee);
         let protocol = protocol_cut(&e, pool.protocol_fee, out_without_fee, net_out);
 
-        let amount_out = pool.tokens.get(j as u32).unwrap().from_internal(net_out);
+        let amount_out = pool.tokens.get(j as u32).unwrap().to_raw(net_out);
         if amount_out < min_out {
             panic_with_error!(&e, Error::SlippageExceeded);
         }
 
-        commit_swap(&e, &mut pool, &to, i, j, in_raw, net_out, protocol);
+        commit_swap(
+            &e,
+            &mut pool,
+            &to,
+            SwapCommit {
+                token_in_index: i,
+                token_out_index: j,
+                in_raw,
+                net_out,
+                protocol,
+            },
+        );
         pool::write_pool(&e, &pool);
         pool::extend_instance_ttl(&e);
 
@@ -383,17 +392,24 @@ impl LiquidityPoolInterface for LiquidityPool {
                 .unwrap_or_else(|| panic_with_error!(&e, Error::MathError));
 
         // Round the charged input up so any sub-precision dust favours the pool.
-        let in_raw = pool
-            .tokens
-            .get(i as u32)
-            .unwrap()
-            .from_internal_up(amount_in_int);
+        let in_raw = pool.tokens.get(i as u32).unwrap().to_raw_up(amount_in_int);
         if in_raw > max_in {
             panic_with_error!(&e, Error::SlippageExceeded);
         }
 
         let protocol = protocol_cut(&e, pool.protocol_fee, out_without_fee, net_out);
-        commit_swap(&e, &mut pool, &to, i, j, in_raw, net_out, protocol);
+        commit_swap(
+            &e,
+            &mut pool,
+            &to,
+            SwapCommit {
+                token_in_index: i,
+                token_out_index: j,
+                in_raw,
+                net_out,
+                protocol,
+            },
+        );
         pool::write_pool(&e, &pool);
         pool::extend_instance_ttl(&e);
 
@@ -405,7 +421,7 @@ impl LiquidityPoolInterface for LiquidityPool {
         let pool = pool::read_pool(&e);
         let mut out = Vec::new(&e);
         for t in pool.tokens.iter() {
-            out.push_back(t.from_internal(t.reserve));
+            out.push_back(t.to_raw(t.reserve));
         }
         out
     }
@@ -452,7 +468,7 @@ impl LiquidityPoolInterface for LiquidityPool {
     /// Set the swap fee (1e9 == 100%), within [MIN_SWAP_FEE, MAX_SWAP_FEE].
     #[only_owner]
     fn set_swap_fee(e: Env, swap_fee: u64) {
-        if swap_fee < MIN_SWAP_FEE || swap_fee > MAX_SWAP_FEE {
+        if !(MIN_SWAP_FEE..=MAX_SWAP_FEE).contains(&swap_fee) {
             panic_with_error!(&e, Error::InvalidSwapFee);
         }
         let mut pool = pool::read_pool(&e);
@@ -567,36 +583,35 @@ fn protocol_cut(e: &Env, protocol_fee: u64, out_without_fee: u64, net_out: u64) 
 /// from `to`, pay `net_out` (internal) of `token_out` to `to`, route `protocol`
 /// (internal) to the beneficiary, and keep the rest. Reserves are updated from
 /// actual raw balance deltas so low-decimal rounding dust stays accounted for.
-fn commit_swap(
-    e: &Env,
-    pool: &mut Pool,
-    to: &Address,
-    i: usize,
-    j: usize,
+struct SwapCommit {
+    token_in_index: usize,
+    token_out_index: usize,
     in_raw: i128,
     net_out: u64,
     protocol: u64,
-) {
-    let beneficiary = pool.beneficiary.clone();
-    let mut t_in = pool.tokens.get(i as u32).unwrap();
-    let mut t_out = pool.tokens.get(j as u32).unwrap();
+}
 
-    let out_raw = t_out.from_internal(net_out);
-    let protocol_raw = t_out.from_internal(protocol);
+fn commit_swap(e: &Env, pool: &mut Pool, to: &Address, swap: SwapCommit) {
+    let beneficiary = pool.beneficiary.clone();
+    let mut t_in = pool.tokens.get(swap.token_in_index as u32).unwrap();
+    let mut t_out = pool.tokens.get(swap.token_out_index as u32).unwrap();
+
+    let out_raw = t_out.to_raw(swap.net_out);
+    let protocol_raw = t_out.to_raw(swap.protocol);
 
     // The amount that physically leaves the pool: user's net output + protocol
     // cut. The LP portion of the fee stays in the reserve.
     t_out
         .reserve
         .checked_sub(
-            net_out
-                .checked_add(protocol)
+            swap.net_out
+                .checked_add(swap.protocol)
                 .unwrap_or_else(|| panic_with_error!(e, Error::MathError)),
         )
         .unwrap_or_else(|| panic_with_error!(e, Error::MathError));
 
     let contract = e.current_contract_address();
-    let actual_in_int = transfer_in_exact(e, &t_in, to, &contract, in_raw);
+    let actual_in_int = transfer_in_exact(e, &t_in, to, &contract, swap.in_raw);
     let actual_net_out_int = transfer_out_exact(e, &t_out, &contract, to, out_raw);
     let actual_protocol_int = transfer_out_exact(e, &t_out, &contract, &beneficiary, protocol_raw);
 
@@ -613,8 +628,8 @@ fn commit_swap(
                 .unwrap_or_else(|| panic_with_error!(e, Error::MathError)),
         )
         .unwrap_or_else(|| panic_with_error!(e, Error::MathError));
-    pool.tokens.set(i as u32, t_in);
-    pool.tokens.set(j as u32, t_out);
+    pool.tokens.set(swap.token_in_index as u32, t_in);
+    pool.tokens.set(swap.token_out_index as u32, t_out);
 }
 
 /// Pull an inbound token amount and verify the pool received exactly that raw
