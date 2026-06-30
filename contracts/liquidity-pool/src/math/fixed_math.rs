@@ -2,8 +2,8 @@
 // these lived in a separate `fixed_math` crate; ported here to pure u64/u128
 // arithmetic so the module is self-contained under Soroban's `no_std` runtime.
 
-// 100% in fixed-point. Matches the swap-fee scale (MAX_SWAP_FEE = 1% = 10_000_000)
-// and the pool's internal 9-decimal balance scale (ONE = 10^INTERNAL_DECIMALS).
+// 100% in fixed-point. Matches the pool's internal 9-decimal balance scale
+// (ONE = 10^INTERNAL_DECIMALS) and the fee-rate scale.
 pub const ONE: u64 = 1_000_000_000;
 
 const ONE_128: u128 = ONE as u128;

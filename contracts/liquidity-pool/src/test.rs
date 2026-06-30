@@ -484,7 +484,7 @@ fn set_swap_fee_changes_output() {
     StellarAssetClient::new(&e, &addr_a).mint(&user, &2_000_000_000);
 
     let out_low_fee = pool.swap_exact_in(&user, &addr_a, &addr_b, &1_000_000_000i128, &0i128);
-    pool.set_swap_fee(&10_000_000u64); // raise to 1% (MAX_SWAP_FEE)
+    pool.set_swap_fee(&10_000_000u64); // raise to max 1%
     let out_high_fee = pool.swap_exact_in(&user, &addr_a, &addr_b, &1_000_000_000i128, &0i128);
 
     assert!(out_high_fee < out_low_fee); // a bigger fee leaves the user with less
@@ -495,7 +495,7 @@ fn set_swap_fee_changes_output() {
 fn set_swap_fee_rejects_out_of_range() {
     let (e, _user, pool_id, _a, _b) = setup();
     let pool = LiquidityPoolClient::new(&e, &pool_id);
-    pool.set_swap_fee(&10_000_001u64); // > MAX_SWAP_FEE (1%)
+    pool.set_swap_fee(&10_000_001u64); // > max 1%
 }
 
 #[test]
@@ -656,6 +656,103 @@ fn partial_withdraw_is_proportional() {
     assert_eq!(pool.get_reserves(), vec![&e, UNIT - out_a, UNIT - out_b]);
     assert_eq!(token_a.balance(&user), a_before + out_a);
     assert_pool_balances_match_reserves(&e, &pool, &pool_id, &addr_a, &addr_b);
+}
+
+#[test]
+fn withdraw_one_token_reduces_only_selected_reserve() {
+    let (e, user, pool_id, addr_a, addr_b) = setup();
+    let pool = LiquidityPoolClient::new(&e, &pool_id);
+    let token_a = TokenClient::new(&e, &addr_a);
+    let token_b = TokenClient::new(&e, &addr_b);
+    let lp = pool.deposit(&user, &vec![&e, UNIT, UNIT], &0i128);
+
+    let burn = lp / 2;
+    let out = pool.withdraw_one_token(&user, &burn, &addr_a, &0i128);
+
+    assert!(out > 0);
+    assert!(out < UNIT);
+    assert_eq!(pool.total_supply(), lp - burn);
+    assert_eq!(token_a.balance(&user), out);
+    assert_eq!(token_b.balance(&user), 0);
+    assert_eq!(pool.get_reserves(), vec![&e, UNIT - out, UNIT]);
+    assert_pool_balances_match_reserves(&e, &pool, &pool_id, &addr_a, &addr_b);
+}
+
+#[test]
+fn withdraw_one_token_after_imbalance_uses_current_reserves() {
+    let (e, user, pool_id, addr_a, addr_b) = setup();
+    let pool = LiquidityPoolClient::new(&e, &pool_id);
+    let token_a = TokenClient::new(&e, &addr_a);
+    let token_b = TokenClient::new(&e, &addr_b);
+    let lp = pool.deposit(&user, &vec![&e, UNIT, UNIT], &0i128);
+
+    StellarAssetClient::new(&e, &addr_a).mint(&user, &100_000_000_000);
+    pool.swap_exact_in(&user, &addr_a, &addr_b, &100_000_000_000i128, &0i128);
+
+    let reserves_before = pool.get_reserves();
+    assert!(reserves_before.get(0).unwrap() > UNIT);
+    assert!(reserves_before.get(1).unwrap() < UNIT);
+
+    let burn = lp / 4;
+    let user_a_before = token_a.balance(&user);
+    let user_b_before = token_b.balance(&user);
+    let out = pool.withdraw_one_token(&user, &burn, &addr_b, &0i128);
+    let reserves_after = pool.get_reserves();
+
+    assert!(out > 0);
+    assert_eq!(pool.total_supply(), lp - burn);
+    assert_eq!(
+        reserves_after.get(0).unwrap(),
+        reserves_before.get(0).unwrap()
+    );
+    assert_eq!(
+        reserves_after.get(1).unwrap(),
+        reserves_before.get(1).unwrap() - out
+    );
+    assert_eq!(token_a.balance(&user), user_a_before);
+    assert_eq!(token_b.balance(&user), user_b_before + out);
+    assert_pool_balances_match_reserves(&e, &pool, &pool_id, &addr_a, &addr_b);
+
+    let (balanced_e, balanced_user, balanced_pool_id, _balanced_a, balanced_b) = setup();
+    let balanced_pool = LiquidityPoolClient::new(&balanced_e, &balanced_pool_id);
+    let balanced_lp = balanced_pool.deposit(&balanced_user, &vec![&balanced_e, UNIT, UNIT], &0i128);
+    let balanced_out =
+        balanced_pool.withdraw_one_token(&balanced_user, &(balanced_lp / 4), &balanced_b, &0i128);
+
+    assert!(out < balanced_out);
+}
+
+#[test]
+#[should_panic]
+fn withdraw_one_token_below_min_out_reverts() {
+    let (e, user, pool_id, addr_a, _addr_b) = setup();
+    let pool = LiquidityPoolClient::new(&e, &pool_id);
+    let lp = pool.deposit(&user, &vec![&e, UNIT, UNIT], &0i128);
+
+    pool.withdraw_one_token(&user, &(lp / 2), &addr_a, &i128::MAX);
+}
+
+#[test]
+#[should_panic]
+fn withdraw_one_token_rejects_fee_on_transfer_output() {
+    let (e, user, pool_id, addr_fee, _addr_sac) = setup_with_fee_token(0);
+    let pool = LiquidityPoolClient::new(&e, &pool_id);
+    let fee = FeeTokenClient::new(&e, &addr_fee);
+    let lp = pool.deposit(&user, &vec![&e, UNIT, UNIT], &0i128);
+
+    fee.set_fee_bps(&1_000);
+    pool.withdraw_one_token(&user, &(lp / 2), &addr_fee, &0i128);
+}
+
+#[test]
+#[should_panic]
+fn withdraw_one_token_unknown_token_reverts() {
+    let (e, user, pool_id, _addr_a, _addr_b) = setup();
+    let pool = LiquidityPoolClient::new(&e, &pool_id);
+    let lp = pool.deposit(&user, &vec![&e, UNIT, UNIT], &0i128);
+    let bogus = Address::generate(&e);
+
+    pool.withdraw_one_token(&user, &(lp / 2), &bogus, &0i128);
 }
 
 #[test]

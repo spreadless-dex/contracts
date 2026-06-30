@@ -73,6 +73,22 @@ pub trait LiquidityPoolInterface {
     /// shares.
     fn withdraw(e: Env, to: Address, lp_amount: i128, min_amounts_out: Vec<i128>) -> Vec<i128>;
 
+    /// Burn `lp_amount` of `to`'s LP shares and pay out a single token. The
+    /// stable invariant is reduced by the burned share, then the selected token
+    /// is withdrawn with swap-fee treatment on the imbalanced portion. Returns
+    /// the raw amount paid.
+    ///
+    /// Reverts: `UnknownToken`, `InvalidAmount`, `SlippageExceeded` (payout <
+    /// `min_amount_out`), `MathError`, `TransferAmountMismatch`,
+    /// insufficient-balance (host) if `to` lacks the shares.
+    fn withdraw_one_token(
+        e: Env,
+        to: Address,
+        lp_amount: i128,
+        token_out: Address,
+        min_amount_out: i128,
+    ) -> i128;
+
     // --- swaps (require `to`'s auth; blocked while paused) ---
 
     /// Swap an exact `amount_in` of `token_in` for `token_out`, paid to `to`,
@@ -180,6 +196,6 @@ pub trait LiquidityPoolInterface {
 //   name(e) -> String
 //   symbol(e) -> String
 //
-// LP exits must use `withdraw`; direct burns are disabled so total supply cannot
-// be reduced without updating reserves.
+// LP exits must use `withdraw` or `withdraw_one_token`; direct burns are
+// disabled so total supply cannot be reduced without updating reserves.
 // ---------------------------------------------------------------------------

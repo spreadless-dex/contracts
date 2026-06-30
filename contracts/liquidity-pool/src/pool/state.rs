@@ -5,6 +5,7 @@ use soroban_sdk::{contracttype, Address, Env, Vec};
 
 use crate::math::MAX_TOKENS;
 
+use super::normalized::NormalizedAmounts;
 use super::scaling::{from_internal, from_internal_up, to_internal};
 
 // --- instance-storage TTL bumping (standard Soroban pattern) ---
@@ -81,14 +82,14 @@ pub fn extend_instance_ttl(e: &Env) {
 
 // --- bridges into the math layer ---
 
-/// Copy the pool's normalized reserves into a stack array for the math layer.
-/// Returns `(array, num_tokens)`; callers pass `&array[..num_tokens]`.
-pub fn reserves(pool: &Pool) -> ([u64; MAX_TOKENS], usize) {
+/// Copy the pool's normalized reserves into a fixed-capacity vector for the
+/// math layer. The returned value owns the token count and preserves pool order.
+pub fn reserves(pool: &Pool) -> NormalizedAmounts {
     let mut arr = [0u64; MAX_TOKENS];
     for (n, token) in pool.tokens.iter().enumerate() {
         arr[n] = token.reserve;
     }
-    (arr, pool.tokens.len() as usize)
+    NormalizedAmounts::new(arr, pool.tokens.len() as usize).unwrap()
 }
 
 /// Index of `token` within the pool, or `None` if it isn't a pool token.
@@ -158,9 +159,9 @@ mod tests {
             assert_eq!(got.swap_fee, 100_000);
 
             // bridges
-            let (arr, n) = reserves(&got);
-            assert_eq!(n, 2);
-            assert_eq!(&arr[..n], &[111u64, 222u64]);
+            let reserves = reserves(&got);
+            assert_eq!(reserves.len(), 2);
+            assert_eq!(reserves.as_slice(), &[111u64, 222u64]);
             assert_eq!(current_amp(&got, 123), 5_000_000);
             assert_eq!(token_index(&got, &token_a), Some(0));
             assert_eq!(token_index(&got, &token_b), Some(1));

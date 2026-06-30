@@ -266,7 +266,7 @@ pub fn calc_pool_token_out_given_exact_tokens_in(
 
 // See: https://github.com/stabbleorg/balancer-v2-monorepo/blob/master/pkg/pool-stable/contracts/StableMath.sol#L354-L395
 #[allow(clippy::too_many_arguments)]
-pub fn calc_token_out_given_exact_pool_token_in(
+pub(super) fn calc_token_out_given_exact_pool_token_in(
     e: &Env,
     amplification: u64,
     balances: &[u64],

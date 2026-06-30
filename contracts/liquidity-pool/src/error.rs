@@ -12,7 +12,7 @@ pub enum Error {
     TokensNotSorted = 2,    // tokens not strictly ascending (also catches duplicates)
     CapsLengthMismatch = 3, // max_caps length != tokens length
     InvalidAmpFactor = 4,   // amp factor out of [MIN_AMP, MAX_AMP]
-    InvalidSwapFee = 5,     // swap fee out of [MIN_SWAP_FEE, MAX_SWAP_FEE]
+    InvalidSwapFee = 5,     // swap fee out of the configured fee range
     InvalidProtocolFee = 6, // protocol fee fraction > ONE (100%)
     InvalidDecimals = 7,    // token decimals too large to scale
     InvalidCap = 8,         // per-token cap negative or exceeds MAX_SAFE_BALANCE
@@ -33,5 +33,5 @@ pub enum Error {
     TransferAmountMismatch = 19, // token balance delta differed from requested transfer
 
     // --- LP shares ---
-    DirectLpBurnDisabled = 20, // LP exits must use withdraw so reserves are updated
+    DirectLpBurnDisabled = 20, // LP exits must use pool exit methods so reserves are updated
 }

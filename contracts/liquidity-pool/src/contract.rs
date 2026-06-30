@@ -25,8 +25,7 @@ use stellar_tokens::fungible::{burnable::FungibleBurnable, capped, Base, Fungibl
 
 use crate::error::Error;
 use crate::interface::LiquidityPoolInterface;
-use crate::math::fixed_math::{FixedComplement, FixedDiv, FixedMul};
-use crate::math::{self, AMP_PRECISION, MAX_SWAP_FEE, MAX_TOKENS, MIN_SWAP_FEE, MIN_TOKENS};
+use crate::math::{AMP_PRECISION, MAX_TOKENS, MIN_TOKENS};
 use crate::pool::{self, Pool, PoolToken};
 
 // Metadata that is added on to the WASM custom section
@@ -72,10 +71,10 @@ impl LiquidityPool {
         if !pool::is_valid_amp_factor(amp_factor) {
             panic_with_error!(&e, Error::InvalidAmpFactor);
         }
-        if !(MIN_SWAP_FEE..=MAX_SWAP_FEE).contains(&swap_fee) {
+        if !pool::is_valid_swap_fee(swap_fee) {
             panic_with_error!(&e, Error::InvalidSwapFee);
         }
-        if protocol_fee > math::fixed_math::ONE {
+        if !pool::is_valid_protocol_fee(protocol_fee) {
             panic_with_error!(&e, Error::InvalidProtocolFee);
         }
 
@@ -150,8 +149,7 @@ impl LiquidityPoolInterface for LiquidityPool {
         }
 
         // Normalize inputs to internal (9-dec) balances.
-        let mut amounts_int = [0u64; MAX_TOKENS];
-        let mut any_positive = false;
+        let mut amounts_array = [0u64; MAX_TOKENS];
         let mut i = 0u32;
         while i < n {
             let raw = amounts_in.get(i).unwrap();
@@ -159,46 +157,37 @@ impl LiquidityPoolInterface for LiquidityPool {
                 Some(a) => a,
                 None => panic_with_error!(&e, Error::InvalidAmount),
             };
-            any_positive |= amt > 0;
-            amounts_int[i as usize] = amt;
+            amounts_array[i as usize] = amt;
             i += 1;
         }
-        if !any_positive {
+        let amounts_int = pool::NormalizedAmounts::new(amounts_array, nn)
+            .unwrap_or_else(|| panic_with_error!(&e, Error::MathError));
+        if !amounts_int.any_positive() {
             panic_with_error!(&e, Error::ZeroDeposit);
         }
 
-        let amp = pool::current_amp(&pool, e.ledger().timestamp());
         let total_supply = Base::total_supply(&e);
-        let (reserves, _) = pool::reserves(&pool);
+        let supply_u64 = if total_supply == 0 {
+            0
+        } else {
+            unwrap_u64(&e, total_supply)
+        };
 
-        let lp_out: u64 = if total_supply == 0 {
+        if total_supply == 0 {
             // First deposit: every token must be funded; LP minted = invariant D.
-            if amounts_int[..nn].contains(&0) {
+            if amounts_int.contains_zero() {
                 panic_with_error!(&e, Error::FirstDepositNotFull);
             }
-            match math::calc_invariant(&e, amp, &amounts_int[..nn], None) {
-                Some(d) if d > 0 => d,
-                _ => panic_with_error!(&e, Error::MathError),
-            }
-        } else {
-            let current_invariant = match math::calc_invariant(&e, amp, &reserves[..nn], None) {
-                Some(d) => d,
-                None => panic_with_error!(&e, Error::MathError),
-            };
-            let supply_u64 = unwrap_u64(&e, total_supply);
-            match math::calc_pool_token_out_given_exact_tokens_in(
-                &e,
-                amp,
-                &reserves[..nn],
-                &amounts_int[..nn],
-                supply_u64,
-                current_invariant,
-                pool.swap_fee,
-                None,
-            ) {
-                Some(l) => l,
-                None => panic_with_error!(&e, Error::MathError),
-            }
+        }
+        let lp_out = match pool::deposit_exact_tokens_in(
+            &e,
+            &pool,
+            e.ledger().timestamp(),
+            &amounts_int,
+            supply_u64,
+        ) {
+            Some(l) => l,
+            None => panic_with_error!(&e, Error::MathError),
         };
 
         if lp_out == 0 || (lp_out as i128) < min_lp_out {
@@ -210,7 +199,7 @@ impl LiquidityPoolInterface for LiquidityPool {
         let contract = e.current_contract_address();
         let mut i = 0u32;
         while i < n {
-            let amt_int = amounts_int[i as usize];
+            let amt_int = amounts_int.get(i as usize).unwrap();
             if amt_int > 0 {
                 let mut t = pool.tokens.get(i).unwrap();
                 // For >9-dec tokens this is the input truncated to 9-dec
@@ -256,6 +245,9 @@ impl LiquidityPoolInterface for LiquidityPool {
         };
         let lp_u64 = unwrap_u64(&e, lp_amount);
 
+        let quote = pool::withdraw_proportional(&pool, supply_u64, lp_u64)
+            .unwrap_or_else(|| panic_with_error!(&e, Error::MathError));
+
         // Burn the caller's shares. We use the low-level `update` (which still
         // checks the holder's balance) rather than `Base::burn`, because the
         // latter calls `to.require_auth()` again in this same frame and the
@@ -267,10 +259,7 @@ impl LiquidityPoolInterface for LiquidityPool {
         let mut i = 0u32;
         while i < n {
             let mut t = pool.tokens.get(i).unwrap();
-            let out_int = match math::mul_div_down_u64(t.reserve, lp_u64, supply_u64) {
-                Some(o) => o,
-                None => panic_with_error!(&e, Error::MathError),
-            };
+            let out_int = quote.amounts_out[i as usize];
             let out_raw = t.to_raw(out_int);
             if out_raw < min_amounts_out.get(i).unwrap() {
                 panic_with_error!(&e, Error::SlippageExceeded);
@@ -291,6 +280,67 @@ impl LiquidityPoolInterface for LiquidityPool {
         pool::extend_instance_ttl(&e);
 
         amounts_out
+    }
+
+    /// Burn `lp_amount` shares and withdraw a single token. The burned share
+    /// lowers the stable invariant, and the selected token pays swap fees on the
+    /// imbalanced portion of the exit.
+    #[when_not_paused]
+    fn withdraw_one_token(
+        e: Env,
+        to: Address,
+        lp_amount: i128,
+        token_out: Address,
+        min_amount_out: i128,
+    ) -> i128 {
+        to.require_auth();
+
+        let mut pool = pool::read_pool(&e);
+        if lp_amount <= 0 {
+            panic_with_error!(&e, Error::InvalidAmount);
+        }
+        let token_index = pool::token_index(&pool, &token_out)
+            .unwrap_or_else(|| panic_with_error!(&e, Error::UnknownToken));
+
+        let supply_u64 = match u64::try_from(Base::total_supply(&e)) {
+            Ok(s) if s > 0 => s,
+            _ => panic_with_error!(&e, Error::MathError),
+        };
+        let lp_u64 = unwrap_u64(&e, lp_amount);
+
+        let quote = pool::withdraw_one_token(
+            &e,
+            &pool,
+            e.ledger().timestamp(),
+            token_index,
+            lp_u64,
+            supply_u64,
+        )
+        .unwrap_or_else(|| panic_with_error!(&e, Error::MathError));
+
+        let mut token = pool.tokens.get(token_index as u32).unwrap();
+        let out_raw = token.to_raw(quote.amount_out);
+        if out_raw < min_amount_out {
+            panic_with_error!(&e, Error::SlippageExceeded);
+        }
+
+        // See `withdraw` above for why exits burn through `Base::update`.
+        Base::update(&e, Some(&to), None, lp_amount);
+
+        if out_raw > 0 {
+            let contract = e.current_contract_address();
+            let sent_int = transfer_out_exact(&e, &token, &contract, &to, out_raw);
+            token.reserve = match token.reserve.checked_sub(sent_int) {
+                Some(r) => r,
+                None => panic_with_error!(&e, Error::MathError),
+            };
+            pool.tokens.set(token_index as u32, token);
+        }
+
+        pool::write_pool(&e, &pool);
+        pool::extend_instance_ttl(&e);
+
+        out_raw
     }
 
     /// Swap an exact `amount_in` of `token_in` for `token_out`, requiring at
@@ -319,18 +369,10 @@ impl LiquidityPoolInterface for LiquidityPool {
         // Pull exactly what we credit (lossless for <= 9-decimal tokens).
         let in_raw = t_in.to_raw(amount_in_int);
 
-        let amp = pool::current_amp(&pool, e.ledger().timestamp());
-        let (reserves, n) = pool::reserves(&pool);
-        let invariant = math::calc_invariant(&e, amp, &reserves[..n], None)
+        let quote = pool::swap_exact_in(&e, &pool, e.ledger().timestamp(), i, j, amount_in_int)
             .unwrap_or_else(|| panic_with_error!(&e, Error::MathError));
-        let out_without_fee =
-            math::calc_out_given_in(&e, amp, &reserves[..n], i, j, amount_in_int, invariant)
-                .unwrap_or_else(|| panic_with_error!(&e, Error::MathError));
 
-        let net_out = net_out_after_fee(&e, pool.swap_fee, out_without_fee);
-        let protocol = protocol_cut(&e, pool.protocol_fee, out_without_fee, net_out);
-
-        let amount_out = pool.tokens.get(j as u32).unwrap().to_raw(net_out);
+        let amount_out = pool.tokens.get(j as u32).unwrap().to_raw(quote.net_out);
         if amount_out < min_out {
             panic_with_error!(&e, Error::SlippageExceeded);
         }
@@ -343,8 +385,8 @@ impl LiquidityPoolInterface for LiquidityPool {
                 token_in_index: i,
                 token_out_index: j,
                 in_raw,
-                net_out,
-                protocol,
+                net_out: quote.net_out,
+                protocol: quote.protocol,
             },
         );
         pool::write_pool(&e, &pool);
@@ -377,27 +419,19 @@ impl LiquidityPoolInterface for LiquidityPool {
             .filter(|a| *a > 0)
             .unwrap_or_else(|| panic_with_error!(&e, Error::InvalidAmount));
 
-        // Gross the desired (net) output up for the swap fee:
-        // out_without_fee = ceil(net_out / (1 - swap_fee)).
-        let out_without_fee = net_out
-            .div_up(pool.swap_fee.complement())
+        let quote = pool::swap_exact_out(&e, &pool, e.ledger().timestamp(), i, j, net_out)
             .unwrap_or_else(|| panic_with_error!(&e, Error::MathError));
-
-        let amp = pool::current_amp(&pool, e.ledger().timestamp());
-        let (reserves, n) = pool::reserves(&pool);
-        let invariant = math::calc_invariant(&e, amp, &reserves[..n], None)
-            .unwrap_or_else(|| panic_with_error!(&e, Error::MathError));
-        let amount_in_int =
-            math::calc_in_given_out(&e, amp, &reserves[..n], i, j, out_without_fee, invariant)
-                .unwrap_or_else(|| panic_with_error!(&e, Error::MathError));
 
         // Round the charged input up so any sub-precision dust favours the pool.
-        let in_raw = pool.tokens.get(i as u32).unwrap().to_raw_up(amount_in_int);
+        let in_raw = pool
+            .tokens
+            .get(i as u32)
+            .unwrap()
+            .to_raw_up(quote.amount_in);
         if in_raw > max_in {
             panic_with_error!(&e, Error::SlippageExceeded);
         }
 
-        let protocol = protocol_cut(&e, pool.protocol_fee, out_without_fee, net_out);
         commit_swap(
             &e,
             &mut pool,
@@ -407,7 +441,7 @@ impl LiquidityPoolInterface for LiquidityPool {
                 token_out_index: j,
                 in_raw,
                 net_out,
-                protocol,
+                protocol: quote.protocol,
             },
         );
         pool::write_pool(&e, &pool);
@@ -465,10 +499,10 @@ impl LiquidityPoolInterface for LiquidityPool {
         pool::extend_instance_ttl(&e);
     }
 
-    /// Set the swap fee (1e9 == 100%), within [MIN_SWAP_FEE, MAX_SWAP_FEE].
+    /// Set the swap fee (1e9 == 100%), within the configured fee range.
     #[only_owner]
     fn set_swap_fee(e: Env, swap_fee: u64) {
-        if !(MIN_SWAP_FEE..=MAX_SWAP_FEE).contains(&swap_fee) {
+        if !pool::is_valid_swap_fee(swap_fee) {
             panic_with_error!(&e, Error::InvalidSwapFee);
         }
         let mut pool = pool::read_pool(&e);
@@ -480,7 +514,7 @@ impl LiquidityPoolInterface for LiquidityPool {
     /// Set the protocol's cut of the swap fee (1e9 == 100% of the swap fee).
     #[only_owner]
     fn set_protocol_fee(e: Env, protocol_fee: u64) {
-        if protocol_fee > math::fixed_math::ONE {
+        if !pool::is_valid_protocol_fee(protocol_fee) {
             panic_with_error!(&e, Error::InvalidProtocolFee);
         }
         let mut pool = pool::read_pool(&e);
@@ -562,23 +596,6 @@ fn swap_indices(e: &Env, pool: &Pool, token_in: &Address, token_out: &Address) -
     (i, j)
 }
 
-/// Net output to the user after the swap fee (charged on the output token).
-fn net_out_after_fee(e: &Env, swap_fee: u64, out_without_fee: u64) -> u64 {
-    out_without_fee
-        .mul_down(swap_fee.complement())
-        .unwrap_or_else(|| panic_with_error!(e, Error::MathError))
-}
-
-/// The protocol's cut of the swap fee (in the output token), given the gross
-/// output and the net paid to the user. The remainder of the fee stays in the
-/// pool, accruing to LPs.
-fn protocol_cut(e: &Env, protocol_fee: u64, out_without_fee: u64, net_out: u64) -> u64 {
-    out_without_fee
-        .saturating_sub(net_out)
-        .mul_down(protocol_fee)
-        .unwrap_or_else(|| panic_with_error!(e, Error::MathError))
-}
-
 /// Move the tokens and update reserves for a swap: pull `in_raw` of `token_in`
 /// from `to`, pay `net_out` (internal) of `token_out` to `to`, route `protocol`
 /// (internal) to the beneficiary, and keep the rest. Reserves are updated from
@@ -658,8 +675,9 @@ fn transfer_in_exact(
 }
 
 /// Send a raw token amount from the pool and return the actual internal reserve
-/// decrease. The raw delta check keeps reserves tied to the token contract's
-/// balance accounting even when internal math produced sub-raw-unit dust.
+/// decrease. The raw delta checks keep reserves tied to the token contract's
+/// balance accounting and ensure the recipient actually received the quoted
+/// amount.
 fn transfer_out_exact(
     e: &Env,
     token: &PoolToken,
@@ -672,12 +690,19 @@ fn transfer_out_exact(
     }
 
     let client = token::Client::new(e, &token.token);
-    let before = client.balance(pool);
+    let pool_before = client.balance(pool);
+    let to_before = client.balance(to);
     client.transfer(pool, to, &amount);
-    let after = client.balance(pool);
+    let pool_after = client.balance(pool);
+    let to_after = client.balance(to);
 
-    match before.checked_sub(after) {
-        Some(delta) if delta == amount => raw_delta_to_internal(e, token, delta),
+    match (
+        pool_before.checked_sub(pool_after),
+        to_after.checked_sub(to_before),
+    ) {
+        (Some(pool_delta), Some(to_delta)) if pool_delta == amount && to_delta == amount => {
+            raw_delta_to_internal(e, token, pool_delta)
+        }
         _ => panic_with_error!(e, Error::TransferAmountMismatch),
     }
 }
@@ -694,7 +719,7 @@ fn raw_delta_to_internal(e: &Env, token: &PoolToken, delta: i128) -> u64 {
 // The operations above mint/burn shares via `Base::mint` / `Base::update`; this
 // `Base`-backed default impl supplies transfers, allowance, balances, and
 // metadata. Direct burns are disabled below because LP exits must update pool
-// reserves through `withdraw`.
+// reserves through `withdraw` or `withdraw_one_token`.
 
 #[contractimpl(contracttrait)]
 impl FungibleToken for LiquidityPool {
