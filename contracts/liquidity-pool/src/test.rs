@@ -943,3 +943,47 @@ fn renounce_ownership_clears_owner() {
     pool.renounce_ownership();
     assert_eq!(pool.get_owner(), None);
 }
+
+// --- events ---
+
+#[test]
+fn deposit_and_swap_emit_events() {
+    use crate::contract::{Deposit, Swap};
+    use soroban_sdk::{testutils::Events as _, Event};
+
+    let (e, user, pool_id, addr_a, addr_b) = setup();
+    let pool = LiquidityPoolClient::new(&e, &pool_id);
+
+    let amounts_in = vec![&e, UNIT, UNIT];
+    let lp = pool.deposit(&user, &amounts_in, &0i128);
+    let deposit_event = Deposit {
+        to: user.clone(),
+        amounts_in,
+        lp_minted: lp,
+    }
+    .to_xdr(&e, &pool_id);
+    assert!(e
+        .events()
+        .all()
+        .filter_by_contract(&pool_id)
+        .events()
+        .contains(&deposit_event));
+
+    StellarAssetClient::new(&e, &addr_a).mint(&user, &1_000_000_000);
+    let amount_in = 1_000_000_000i128;
+    let out = pool.swap_exact_in(&user, &addr_a, &addr_b, &amount_in, &0i128);
+    let swap_event = Swap {
+        to: user.clone(),
+        token_in: addr_a.clone(),
+        token_out: addr_b.clone(),
+        amount_in,
+        amount_out: out,
+    }
+    .to_xdr(&e, &pool_id);
+    assert!(e
+        .events()
+        .all()
+        .filter_by_contract(&pool_id)
+        .events()
+        .contains(&swap_event));
+}

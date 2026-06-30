@@ -15,8 +15,8 @@
 #![allow(dead_code, clippy::too_many_arguments)]
 
 use soroban_sdk::{
-    contract, contractimpl, contractmeta, panic_with_error, token, Address, Env, MuxedAddress,
-    String, Vec,
+    contract, contractevent, contractimpl, contractmeta, panic_with_error, token, Address, Env,
+    MuxedAddress, String, Vec,
 };
 use stellar_access::ownable::{self, Ownable};
 use stellar_contract_utils::pausable;
@@ -33,6 +33,55 @@ contractmeta!(
     key = "Description",
     val = "Multi-asset StableSwap AMM (Stabble-style); the pool is its own LP token"
 );
+
+// --- contract events ---
+//
+// Domain events for off-chain indexers/UIs. The LP-share token side (mint,
+// burn, transfer) already emits SEP-41 events via OpenZeppelin's `Base`; these
+// cover the AMM operations it doesn't. Amounts are in each token's raw units.
+
+/// Liquidity added. Topics: `("deposit", to)`.
+#[contractevent]
+#[derive(Clone)]
+pub struct Deposit {
+    #[topic]
+    pub to: Address,
+    pub amounts_in: Vec<i128>,
+    pub lp_minted: i128,
+}
+
+/// Proportional withdrawal. Topics: `("withdraw", to)`.
+#[contractevent]
+#[derive(Clone)]
+pub struct Withdraw {
+    #[topic]
+    pub to: Address,
+    pub lp_burned: i128,
+    pub amounts_out: Vec<i128>,
+}
+
+/// Single-token withdrawal. Topics: `("withdraw_one_token", to)`.
+#[contractevent]
+#[derive(Clone)]
+pub struct WithdrawOneToken {
+    #[topic]
+    pub to: Address,
+    pub token_out: Address,
+    pub lp_burned: i128,
+    pub amount_out: i128,
+}
+
+/// Swap, exact-in or exact-out. Topics: `("swap", to)`.
+#[contractevent]
+#[derive(Clone)]
+pub struct Swap {
+    #[topic]
+    pub to: Address,
+    pub token_in: Address,
+    pub token_out: Address,
+    pub amount_in: i128,
+    pub amount_out: i128,
+}
 
 /// The liquidity pool. It is simultaneously the AMM and its own SEP-41 LP-share
 /// token (Uniswap-V2-pair style).
@@ -220,6 +269,13 @@ impl LiquidityPoolInterface for LiquidityPool {
         pool::write_pool(&e, &pool);
         pool::extend_instance_ttl(&e);
 
+        Deposit {
+            to,
+            amounts_in,
+            lp_minted: lp_out as i128,
+        }
+        .publish(&e);
+
         lp_out as i128
     }
 
@@ -278,6 +334,13 @@ impl LiquidityPoolInterface for LiquidityPool {
 
         pool::write_pool(&e, &pool);
         pool::extend_instance_ttl(&e);
+
+        Withdraw {
+            to,
+            lp_burned: lp_amount,
+            amounts_out: amounts_out.clone(),
+        }
+        .publish(&e);
 
         amounts_out
     }
@@ -340,6 +403,14 @@ impl LiquidityPoolInterface for LiquidityPool {
         pool::write_pool(&e, &pool);
         pool::extend_instance_ttl(&e);
 
+        WithdrawOneToken {
+            to,
+            token_out,
+            lp_burned: lp_amount,
+            amount_out: out_raw,
+        }
+        .publish(&e);
+
         out_raw
     }
 
@@ -391,6 +462,15 @@ impl LiquidityPoolInterface for LiquidityPool {
         );
         pool::write_pool(&e, &pool);
         pool::extend_instance_ttl(&e);
+
+        Swap {
+            to,
+            token_in,
+            token_out,
+            amount_in: in_raw,
+            amount_out,
+        }
+        .publish(&e);
 
         amount_out
     }
@@ -446,6 +526,15 @@ impl LiquidityPoolInterface for LiquidityPool {
         );
         pool::write_pool(&e, &pool);
         pool::extend_instance_ttl(&e);
+
+        Swap {
+            to,
+            token_in,
+            token_out,
+            amount_in: in_raw,
+            amount_out,
+        }
+        .publish(&e);
 
         in_raw
     }
