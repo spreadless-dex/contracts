@@ -616,17 +616,10 @@ fn commit_swap(e: &Env, pool: &mut Pool, to: &Address, swap: SwapCommit) {
     let out_raw = t_out.to_raw(swap.net_out);
     let protocol_raw = t_out.to_raw(swap.protocol);
 
-    // The amount that physically leaves the pool: user's net output + protocol
-    // cut. The LP portion of the fee stays in the reserve.
-    t_out
-        .reserve
-        .checked_sub(
-            swap.net_out
-                .checked_add(swap.protocol)
-                .unwrap_or_else(|| panic_with_error!(e, Error::MathError)),
-        )
-        .unwrap_or_else(|| panic_with_error!(e, Error::MathError));
-
+    // The amount that physically leaves the out reserve is the user's net output
+    // plus the protocol cut; the LP portion of the fee stays in the reserve. The
+    // reserve is debited below from the *actual* transfer deltas (which also
+    // guards against an underflow), so no separate pre-check is needed here.
     let contract = e.current_contract_address();
     let actual_in_int = transfer_in_exact(e, &t_in, to, &contract, swap.in_raw);
     let actual_net_out_int = transfer_out_exact(e, &t_out, &contract, to, out_raw);
