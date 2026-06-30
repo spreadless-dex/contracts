@@ -1,0 +1,9 @@
+# Rust's output directory
+target
+
+# Local settings
+.soroban
+.stellar
+
+# Temporary audit notes
+AUDIT_FINDINGS_TEMP.md
