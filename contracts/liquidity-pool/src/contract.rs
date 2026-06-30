@@ -204,35 +204,20 @@ impl LiquidityPoolInterface for LiquidityPool {
 
         let mut pool = pool::read_pool(&e);
         let n = pool.tokens.len();
-        let nn = n as usize;
         if amounts_in.len() != n {
             panic_with_error!(&e, Error::AmountsLengthMismatch);
         }
 
-        // Normalize inputs to internal (9-dec) balances.
-        let mut amounts_array = [0u64; MAX_TOKENS];
-        let mut i = 0u32;
-        while i < n {
-            let raw = amounts_in.get(i).unwrap();
-            let amt = match pool.tokens.get(i).unwrap().to_internal(raw) {
-                Some(a) => a,
-                None => panic_with_error!(&e, Error::InvalidAmount),
-            };
-            amounts_array[i as usize] = amt;
-            i += 1;
-        }
-        let amounts_int = pool::NormalizedAmounts::new(amounts_array, nn)
-            .unwrap_or_else(|| panic_with_error!(&e, Error::MathError));
+        // Scale raw inputs to internal (9-dec) balances.
+        let amounts_int = pool::normalize_amounts(&pool, &amounts_in)
+            .unwrap_or_else(|| panic_with_error!(&e, Error::InvalidAmount));
         if !amounts_int.any_positive() {
             panic_with_error!(&e, Error::ZeroDeposit);
         }
 
+        // Zero supply (the first deposit) scales to 0; otherwise it must fit u64.
         let total_supply = Base::total_supply(&e);
-        let supply_u64 = if total_supply == 0 {
-            0
-        } else {
-            unwrap_u64(&e, total_supply)
-        };
+        let supply_u64 = unwrap_u64(&e, total_supply);
 
         if total_supply == 0 {
             // First deposit: every token must be funded; LP minted = invariant D.
@@ -274,11 +259,8 @@ impl LiquidityPoolInterface for LiquidityPool {
                 // precision, so no sub-precision dust is stranded in the pool.
                 let transfer_in = t.to_raw(amt_int);
                 let received_int = transfer_in_exact(&e, &t, &to, &contract, transfer_in);
-                let new_reserve = match t.reserve.checked_add(received_int) {
-                    Some(r) if r <= t.max_cap => r,
-                    _ => panic_with_error!(&e, Error::CapExceeded),
-                };
-                t.reserve = new_reserve;
+                t.credit(received_int)
+                    .unwrap_or_else(|| panic_with_error!(&e, Error::CapExceeded));
                 pool.tokens.set(i, t);
             }
             i += 1;
@@ -319,10 +301,7 @@ impl LiquidityPoolInterface for LiquidityPool {
         }
 
         // Proportional share is taken against the supply *before* burning.
-        let supply_u64 = match u64::try_from(Base::total_supply(&e)) {
-            Ok(s) if s > 0 => s,
-            _ => panic_with_error!(&e, Error::MathError),
-        };
+        let supply_u64 = exit_supply(&e);
         let lp_u64 = unwrap_u64(&e, lp_amount);
 
         let quote = pool::withdraw_proportional(&pool, supply_u64, lp_u64)
@@ -346,10 +325,8 @@ impl LiquidityPoolInterface for LiquidityPool {
             }
             if out_raw > 0 {
                 let sent_int = transfer_out_exact(&e, &t, &contract, &to, out_raw);
-                t.reserve = match t.reserve.checked_sub(sent_int) {
-                    Some(r) => r,
-                    None => panic_with_error!(&e, Error::MathError),
-                };
+                t.debit(sent_int)
+                    .unwrap_or_else(|| panic_with_error!(&e, Error::MathError));
                 pool.tokens.set(i, t);
             }
             amounts_out.push_back(out_raw);
@@ -387,13 +364,9 @@ impl LiquidityPoolInterface for LiquidityPool {
         if lp_amount <= 0 {
             panic_with_error!(&e, Error::InvalidAmount);
         }
-        let token_index = pool::token_index(&pool, &token_out)
-            .unwrap_or_else(|| panic_with_error!(&e, Error::UnknownToken));
+        let token_index = require_token_index(&e, &pool, &token_out);
 
-        let supply_u64 = match u64::try_from(Base::total_supply(&e)) {
-            Ok(s) if s > 0 => s,
-            _ => panic_with_error!(&e, Error::MathError),
-        };
+        let supply_u64 = exit_supply(&e);
         let lp_u64 = unwrap_u64(&e, lp_amount);
 
         let quote = pool::withdraw_one_token(
@@ -431,10 +404,9 @@ impl LiquidityPoolInterface for LiquidityPool {
                 .unwrap_or_else(|| panic_with_error!(&e, Error::MathError));
         }
         if removed_int > 0 {
-            token.reserve = match token.reserve.checked_sub(removed_int) {
-                Some(r) => r,
-                None => panic_with_error!(&e, Error::MathError),
-            };
+            token
+                .debit(removed_int)
+                .unwrap_or_else(|| panic_with_error!(&e, Error::MathError));
             pool.tokens.set(token_index as u32, token);
         }
 
@@ -674,8 +646,7 @@ impl LiquidityPoolInterface for LiquidityPool {
     #[only_owner]
     fn set_token_cap(e: Env, token: Address, max_cap: i128) {
         let mut pool = pool::read_pool(&e);
-        let i = pool::token_index(&pool, &token)
-            .unwrap_or_else(|| panic_with_error!(&e, Error::UnknownToken));
+        let i = require_token_index(&e, &pool, &token);
         let mut t = pool.tokens.get(i as u32).unwrap();
         let cap_int = match pool::to_internal(max_cap, t.scaling_factor, t.scaling_up) {
             Some(c) if c >= t.reserve => c,
@@ -714,12 +685,26 @@ fn unwrap_u64(e: &Env, value: i128) -> u64 {
     }
 }
 
+/// LP supply for an exit, as the `u64` the math layer works in. A withdrawal
+/// against zero (or overflowing) supply is a logic error, so this traps rather
+/// than returning it — unlike a deposit, where a zero supply is the valid first
+/// deposit and `unwrap_u64` is used directly.
+fn exit_supply(e: &Env) -> u64 {
+    match u64::try_from(Base::total_supply(e)) {
+        Ok(s) if s > 0 => s,
+        _ => panic_with_error!(e, Error::MathError),
+    }
+}
+
+/// Index of `token` within the pool, trapping with `UnknownToken` if absent.
+fn require_token_index(e: &Env, pool: &Pool, token: &Address) -> usize {
+    pool::token_index(pool, token).unwrap_or_else(|| panic_with_error!(e, Error::UnknownToken))
+}
+
 /// Resolve a (token_in, token_out) address pair to distinct pool token indices.
 fn swap_indices(e: &Env, pool: &Pool, token_in: &Address, token_out: &Address) -> (usize, usize) {
-    let i = pool::token_index(pool, token_in)
-        .unwrap_or_else(|| panic_with_error!(e, Error::UnknownToken));
-    let j = pool::token_index(pool, token_out)
-        .unwrap_or_else(|| panic_with_error!(e, Error::UnknownToken));
+    let i = require_token_index(e, pool, token_in);
+    let j = require_token_index(e, pool, token_out);
     if i == j {
         panic_with_error!(e, Error::SameToken);
     }
@@ -755,18 +740,13 @@ fn commit_swap(e: &Env, pool: &mut Pool, to: &Address, swap: SwapCommit) {
     let actual_net_out_int = transfer_out_exact(e, &t_out, &contract, to, out_raw);
     let actual_protocol_int = transfer_out_exact(e, &t_out, &contract, &beneficiary, protocol_raw);
 
-    t_in.reserve = t_in
-        .reserve
-        .checked_add(actual_in_int)
-        .filter(|r| *r <= t_in.max_cap)
+    t_in.credit(actual_in_int)
         .unwrap_or_else(|| panic_with_error!(e, Error::CapExceeded));
-    t_out.reserve = t_out
-        .reserve
-        .checked_sub(
-            actual_net_out_int
-                .checked_add(actual_protocol_int)
-                .unwrap_or_else(|| panic_with_error!(e, Error::MathError)),
-        )
+    let out_debit = actual_net_out_int
+        .checked_add(actual_protocol_int)
+        .unwrap_or_else(|| panic_with_error!(e, Error::MathError));
+    t_out
+        .debit(out_debit)
         .unwrap_or_else(|| panic_with_error!(e, Error::MathError));
     pool.tokens.set(swap.token_in_index as u32, t_in);
     pool.tokens.set(swap.token_out_index as u32, t_out);

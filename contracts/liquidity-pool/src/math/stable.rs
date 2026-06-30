@@ -44,48 +44,74 @@ pub fn calc_invariant(
     let sum_u256 = u256(e, sum);
     let mut invariant = sum_u256.clone(); // D in the Curve version
 
-    // Precompute balances[i] * num_tokens
+    // Loop-invariant terms, hoisted out of the Newton iteration below so they
+    // aren't re-allocated as host U256 objects on every pass:
+    //   balances[i] * num_tokens (the per-token divisor), as U256
+    //   amp_times_total - amp_precision        (the `invariant` coefficient)
+    //   n + 1                                  (the `p` coefficient)
+    //   amp_times_total * sum / amp_precision  (the constant numerator term)
     let mut balances_times = [0u64; MAX_TOKENS];
     for (i, &balance) in balances.iter().enumerate() {
         balances_times[i] = balance.checked_mul(num_tokens_u64)?;
     }
+    let balances_times_u256: [U256; MAX_TOKENS] =
+        core::array::from_fn(|i| u256(e, balances_times[i]));
+    let amp_minus = u256(e, amp_times_total.checked_sub(AMP_PRECISION)?);
+    let n_plus_1 = u256(e, num_tokens_u64.saturating_add(1));
+    let numerator_const = mul_div_down(&amp_times_total_u256, &sum_u256, &amp_precision, &zero)?;
 
     let threshold = inv_threshold.unwrap_or(DEFAULT_INV_THRESHOLD);
     for _ in 0..64 {
         let mut p = invariant.clone();
-
-        for &balance_times in balances_times[..num_tokens].iter() {
+        for balance_times in balances_times_u256[..num_tokens].iter() {
             // (p * invariant) / (balances[i] * num_tokens)
-            let balance_times = u256(e, balance_times);
-            p = mul_div_down(&p, &invariant, &balance_times, &zero)?;
+            p = mul_div_down(&p, &invariant, balance_times, &zero)?;
         }
 
         let prev_invariant = invariant.clone(); // Dprev in the Curve version
 
-        // numerator = (amp_times_total * sum / amp_precision) + p * n
-        let numerator = mul_div_down(&amp_times_total_u256, &sum_u256, &amp_precision, &zero)?
-            .add(&p.mul(&num_tokens_u256));
-
-        // denominator = ((amp_times_total - amp_precision) * invariant / amp_precision) + (n + 1) * p
-        let amp_minus = u256(e, amp_times_total.checked_sub(AMP_PRECISION)?);
-        let denominator = mul_div_down(&amp_minus, &invariant, &amp_precision, &zero)?
-            .add(&u256(e, num_tokens_u64.saturating_add(1)).mul(&p));
+        // numerator   = amp_times_total * sum / amp_precision + p * n
+        let numerator = numerator_const.add(&p.mul(&num_tokens_u256));
+        // denominator = (amp_times_total - amp_precision) * invariant / amp_precision + (n + 1) * p
+        let denominator =
+            mul_div_down(&amp_minus, &invariant, &amp_precision, &zero)?.add(&n_plus_1.mul(&p));
 
         invariant = mul_div_down(&numerator, &invariant, &denominator, &zero)?;
 
         let invariant_u64 = to_u64(&invariant)?;
         let prev_invariant_u64 = to_u64(&prev_invariant)?;
-
-        if invariant_u64 > prev_invariant_u64 {
-            if invariant_u64.saturating_sub(prev_invariant_u64) <= threshold {
-                return Some(invariant_u64);
-            }
-        } else if prev_invariant_u64.saturating_sub(invariant_u64) <= threshold {
+        if invariant_u64.abs_diff(prev_invariant_u64) <= threshold {
             return Some(invariant_u64);
         }
     }
 
     None
+}
+
+// Copy `balances` into a fixed-capacity array with entry `index` set to `value`.
+// Used to form the post-trade balances for a single token. The caller obtains
+// `value` via `balances.get(index)?`, so `index < balances.len() <= MAX_TOKENS`.
+fn balances_with(balances: &[u64], index: usize, value: u64) -> [u64; MAX_TOKENS] {
+    let mut new_balances = [0u64; MAX_TOKENS];
+    new_balances[..balances.len()].copy_from_slice(balances);
+    new_balances[index] = value;
+    new_balances
+}
+
+// LP shares to mint for a deposit that grew the invariant from `current` to
+// `new`: `supply * (new / current - 1)`, rounded down. If the invariant didn't
+// increase (for any reason) no LP is minted.
+fn lp_from_invariant_ratio(
+    pool_token_supply: u64,
+    new_invariant: u64,
+    current_invariant: u64,
+) -> Option<u64> {
+    let invariant_ratio = new_invariant.div_down(current_invariant)?;
+    if invariant_ratio > fixed_math::ONE {
+        pool_token_supply.mul_down(invariant_ratio.saturating_sub(fixed_math::ONE))
+    } else {
+        Some(0)
+    }
 }
 
 // Computes how many tokens can be taken out of a pool if `token_amount_in` are sent, given the current balances.
@@ -117,14 +143,8 @@ pub fn calc_out_given_in(
         return None;
     }
 
-    let mut new_balances = [0u64; MAX_TOKENS];
-    for i in 0..num_tokens {
-        if i == token_index_in {
-            new_balances[i] = balances[i].checked_add(token_amount_in)?;
-        } else {
-            new_balances[i] = balances[i];
-        }
-    }
+    let balance_in_new = balances.get(token_index_in)?.checked_add(token_amount_in)?;
+    let new_balances = balances_with(balances, token_index_in, balance_in_new);
     let new_balances = &new_balances[..num_tokens];
 
     let balance_out = *balances.get(token_index_out)?;
@@ -169,14 +189,10 @@ pub fn calc_in_given_out(
         return None;
     }
 
-    let mut new_balances = [0u64; MAX_TOKENS];
-    for i in 0..num_tokens {
-        if i == token_index_out {
-            new_balances[i] = balances[i].checked_sub(token_amount_out)?;
-        } else {
-            new_balances[i] = balances[i];
-        }
-    }
+    let balance_out_new = balances
+        .get(token_index_out)?
+        .checked_sub(token_amount_out)?;
+    let new_balances = balances_with(balances, token_index_out, balance_out_new);
     let new_balances = &new_balances[..num_tokens];
 
     let balance_in = *balances.get(token_index_in)?;
@@ -249,14 +265,7 @@ pub fn calc_pool_token_out_given_exact_tokens_in(
     let new_balances = &new_balances[..num_tokens];
 
     let new_invariant = calc_invariant(e, amplification, new_balances, inverse_threshold)?;
-    let invariant_ratio = new_invariant.div_down(current_invariant)?;
-
-    // If the invariant didn't increase for any reason, we simply don't mint LP
-    if invariant_ratio > fixed_math::ONE {
-        pool_token_supply.mul_down(invariant_ratio.saturating_sub(fixed_math::ONE))
-    } else {
-        Some(0)
-    }
+    lp_from_invariant_ratio(pool_token_supply, new_invariant, current_invariant)
 }
 
 // LP that would be minted for a deposit if NO swap fee were charged on the
@@ -289,13 +298,7 @@ pub fn calc_pool_token_out_no_fee(
         &new_balances[..num_tokens],
         inverse_threshold,
     )?;
-    let invariant_ratio = new_invariant.div_down(current_invariant)?;
-
-    if invariant_ratio > fixed_math::ONE {
-        pool_token_supply.mul_down(invariant_ratio.saturating_sub(fixed_math::ONE))
-    } else {
-        Some(0)
-    }
+    lp_from_invariant_ratio(pool_token_supply, new_invariant, current_invariant)
 }
 
 // Returns `(net_out, fee)`: the amount paid to the caller after the swap fee on
@@ -418,12 +421,7 @@ fn get_token_balance_given_invariant_n_all_other_balances(
 
         let token_balance_u64 = to_u64(&token_balance)?;
         let prev_token_balance_u64 = to_u64(&prev_token_balance)?;
-
-        if token_balance_u64 > prev_token_balance_u64 {
-            if token_balance_u64.saturating_sub(prev_token_balance_u64) <= BALANCE_THRESHOLD {
-                return Some(token_balance_u64);
-            }
-        } else if prev_token_balance_u64.saturating_sub(token_balance_u64) <= BALANCE_THRESHOLD {
+        if token_balance_u64.abs_diff(prev_token_balance_u64) <= BALANCE_THRESHOLD {
             return Some(token_balance_u64);
         }
     }

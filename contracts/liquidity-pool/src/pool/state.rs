@@ -58,6 +58,23 @@ impl PoolToken {
     pub fn to_raw_up(&self, internal: u64) -> i128 {
         from_internal_up(internal, self.scaling_factor, self.scaling_up)
     }
+
+    /// Add `amount` internal units to the reserve, enforcing the per-token cap.
+    /// Returns `None` if the reserve would overflow or exceed `max_cap`.
+    pub fn credit(&mut self, amount: u64) -> Option<()> {
+        self.reserve = self
+            .reserve
+            .checked_add(amount)
+            .filter(|r| *r <= self.max_cap)?;
+        Some(())
+    }
+
+    /// Subtract `amount` internal units from the reserve. Returns `None` on
+    /// underflow.
+    pub fn debit(&mut self, amount: u64) -> Option<()> {
+        self.reserve = self.reserve.checked_sub(amount)?;
+        Some(())
+    }
 }
 
 // --- storage ---
@@ -90,6 +107,18 @@ pub fn reserves(pool: &Pool) -> NormalizedAmounts {
         arr[n] = token.reserve;
     }
     NormalizedAmounts::new(arr, pool.tokens.len() as usize).unwrap()
+}
+
+/// Scale a vector of raw token amounts (in token order, one per pool token) into
+/// normalized internal balances for the math layer. The raw/internal seam thus
+/// stays in the pool layer. Returns `None` if any amount is negative or out of
+/// range. Mirrors `reserves`, which builds the same shape from the reserves.
+pub fn normalize_amounts(pool: &Pool, raw: &Vec<i128>) -> Option<NormalizedAmounts> {
+    let mut arr = [0u64; MAX_TOKENS];
+    for (i, token) in pool.tokens.iter().enumerate() {
+        arr[i] = token.to_internal(raw.get(i as u32)?)?;
+    }
+    NormalizedAmounts::new(arr, pool.tokens.len() as usize)
 }
 
 /// Index of `token` within the pool, or `None` if it isn't a pool token.

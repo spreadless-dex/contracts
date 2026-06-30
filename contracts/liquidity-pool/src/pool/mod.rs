@@ -28,5 +28,6 @@ pub use quote::{
 };
 pub use scaling::{from_internal, scaling_for, to_internal, INTERNAL_DECIMALS};
 pub use state::{
-    extend_instance_ttl, has_pool, read_pool, reserves, token_index, write_pool, Pool, PoolToken,
+    extend_instance_ttl, has_pool, normalize_amounts, read_pool, reserves, token_index, write_pool,
+    Pool, PoolToken,
 };
