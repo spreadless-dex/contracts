@@ -1,9 +1,27 @@
 {
   "version": "0.0.0",
-  "name": "liquidity-pool",
+  "name": "@spreadless-dex/sdk",
+  "description": "TypeScript SDK for the Spreadless liquidity-pool Soroban contract.",
   "type": "module",
-  "exports": "./dist/index.js",
-  "typings": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/spreadless-dex/contracts.git",
+    "directory": "bindings/liquidity-pool"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc"
   },

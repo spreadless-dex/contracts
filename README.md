@@ -176,6 +176,12 @@ Build an optimized wasm:
 make optimize
 ```
 
+Deploy a testnet pool with two open-mint test tokens and save the addresses:
+
+```sh
+make deploy-testnet SOURCE=<stellar-identity>
+```
+
 ## Deploy
 
 The Makefile includes a 2-token deployment template. `TOKEN_A` and `TOKEN_B`
@@ -205,6 +211,20 @@ Create and fund a deployment identity for the configured network:
 ```sh
 make keys SOURCE=default NETWORK=testnet
 ```
+
+### Testnet Demo Deployment
+
+For demo and integration testing, `make deploy-testnet` deploys:
+
+- `sUSDC`: an uncapped SEP-41 test token with open `mint(to, amount)`.
+- `sUSDT`: an uncapped SEP-41 test token with open `mint(to, amount)`.
+- `sDAI`: an uncapped SEP-41 test token with open `mint(to, amount)`.
+- A liquidity pool initialized with those three token addresses.
+
+The script mints an initial balance of each token to the deployer, seeds the
+first pool deposit, and writes the resulting contract addresses to
+`deployments/testnet.json`. This deployment is intentionally testnet-only; the
+token `mint` entrypoint has no authorization.
 
 ## Safety Notes
 

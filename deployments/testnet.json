@@ -1,0 +1,96 @@
+{
+  "network": "testnet",
+  "network_passphrase": "Test SDF Network ; September 2015",
+  "deployed_at": "2026-07-01T14:00:27Z",
+  "source_identity": "perps-testnet",
+  "deployer": "GBQNJHJJRTKU43GOW34BQXLMTRZFOZERDGQPBUZGXTJK3HQEEDXXL73B",
+  "contracts": {
+    "test_tokens": [
+      {
+        "label": "sUSDC",
+        "address": "CDKFYHC3EPRCZY4DIMCIBQ3PO5QPD6KZFFXNMLS4XENY2QNTZN2KLMRM",
+        "name": "Spreadless Test USDC",
+        "symbol": "sUSDC",
+        "decimals": 7,
+        "open_mint": true,
+        "supply_cap": null
+      },
+      {
+        "label": "sUSDT",
+        "address": "CB2NS6KYG5ZBHHVKXCHYWLRRH4AKFXNWRYNSQTKNFW23CAY4SGSQVG75",
+        "name": "Spreadless Test USDT",
+        "symbol": "sUSDT",
+        "decimals": 7,
+        "open_mint": true,
+        "supply_cap": null
+      },
+      {
+        "label": "sDAI",
+        "address": "CBXN4CMLFVDNVFSGNXFGP5EWI77ISC5KH5UXSDBQETZCJHYHA3KEP4JJ",
+        "name": "Spreadless Test DAI",
+        "symbol": "sDAI",
+        "decimals": 7,
+        "open_mint": true,
+        "supply_cap": null
+      }
+    ],
+    "liquidity_pool": {
+      "label": "3-token-usd-pool",
+      "address": "CD7TRTJF54QP4BDIP4JJIKMBATYP4IZAGZQKGVSXW3VB457IG4RGSAA6",
+      "owner": "GBQNJHJJRTKU43GOW34BQXLMTRZFOZERDGQPBUZGXTJK3HQEEDXXL73B",
+      "beneficiary": "GBQNJHJJRTKU43GOW34BQXLMTRZFOZERDGQPBUZGXTJK3HQEEDXXL73B",
+      "tokens": [
+        "CBXN4CMLFVDNVFSGNXFGP5EWI77ISC5KH5UXSDBQETZCJHYHA3KEP4JJ",
+        "CB2NS6KYG5ZBHHVKXCHYWLRRH4AKFXNWRYNSQTKNFW23CAY4SGSQVG75",
+        "CDKFYHC3EPRCZY4DIMCIBQ3PO5QPD6KZFFXNMLS4XENY2QNTZN2KLMRM"
+      ],
+      "amp_factor": 100,
+      "swap_fee": 100000,
+      "protocol_fee": 0,
+      "max_caps": [
+        "30000000000000000",
+        "30000000000000000",
+        "30000000000000000"
+      ],
+      "lp_max_supply": "3000000000000000000"
+    },
+    "previous_pools": [
+      {
+        "label": "2-token-usd-pool",
+        "address": "CBMJOFJR6NHETIHQWS3YPJGUK267PMHZ6U7HHNXZS66CQNQTI2QPASEV",
+        "deployed_at": "2026-07-01T13:41:45Z",
+        "tokens": [
+          "CB2NS6KYG5ZBHHVKXCHYWLRRH4AKFXNWRYNSQTKNFW23CAY4SGSQVG75",
+          "CDKFYHC3EPRCZY4DIMCIBQ3PO5QPD6KZFFXNMLS4XENY2QNTZN2KLMRM"
+        ],
+        "initial_liquidity": {
+          "deposited_each_token": "1000000000000",
+          "deposit_result": "200000000000000"
+        }
+      }
+    ]
+  },
+  "initial_liquidity": {
+    "provider": "GBQNJHJJRTKU43GOW34BQXLMTRZFOZERDGQPBUZGXTJK3HQEEDXXL73B",
+    "minted_each_token": "1000000000000",
+    "deposited_each_token": "1000000000000",
+    "deposit_result": "300000000000000"
+  },
+  "last_test_swap": {
+    "transaction": "9a4a969290830cb4368483d3555e0ad0f4edf24b50f37ccfbbcc184efc1edf6c",
+    "token_in": "CBXN4CMLFVDNVFSGNXFGP5EWI77ISC5KH5UXSDBQETZCJHYHA3KEP4JJ",
+    "token_out": "CB2NS6KYG5ZBHHVKXCHYWLRRH4AKFXNWRYNSQTKNFW23CAY4SGSQVG75",
+    "amount_in": "10000000",
+    "amount_out": "9998998",
+    "post_swap_reserves": [
+      "1000010000000",
+      "999990001002",
+      "1000000000000"
+    ]
+  },
+  "notes": [
+    "The test token mint(to, amount) entrypoint is intentionally open and uncapped.",
+    "Pool token order is canonical and may differ from the display labels above.",
+    "The active liquidity_pool is the 3-token USD-variant pool."
+  ]
+}

@@ -36,8 +36,10 @@ RUST_VERSION   ?= 1.92.0
 TARGET_TRIPLE  ?= wasm32v1-none
 
 WASM_NAME      := liquidity_pool
+TEST_TOKEN_WASM_NAME := test_token
 RELEASE_DIR    := target/$(TARGET_TRIPLE)/release
 WASM           := $(RELEASE_DIR)/$(WASM_NAME).wasm
+TEST_TOKEN_WASM := $(RELEASE_DIR)/$(TEST_TOKEN_WASM_NAME).wasm
 BINDINGS_DIR   ?= bindings/liquidity-pool
 
 # --- constructor arguments for `make deploy` (2-token template) ---
@@ -54,15 +56,20 @@ MAX_CAP        ?= 10000000000000000        # 1e16 raw, per token
 LP_MAX_SUPPLY  ?= 1000000000000000000      # 1e18
 
 .DEFAULT_GOAL := build
-.PHONY: all build bindings test optimize deploy setup keys fund clean fmt fmt-check lint help
+.PHONY: all build build-test-token bindings test optimize optimize-test-token deploy deploy-testnet setup keys fund clean fmt fmt-check lint help
 
 ## all: build then test
 all: build test
 
 ## build: compile the contract to wasm (pinned toolchain via stellar CLI)
 build:
-	rustup run $(RUST_VERSION) $(STELLAR) contract build
+	rustup run $(RUST_VERSION) $(STELLAR) contract build --package liquidity-pool
 	@echo "built: $(WASM)"
+
+## build-test-token: compile the open-mint test token to wasm
+build-test-token:
+	rustup run $(RUST_VERSION) $(STELLAR) contract build --package test-token
+	@echo "built: $(TEST_TOKEN_WASM)"
 
 ## bindings: generate TypeScript contract bindings from the built wasm
 bindings: build
@@ -78,8 +85,13 @@ test:
 
 ## optimize: build the contract with wasm optimization -> $(WASM)
 optimize:
-	rustup run $(RUST_VERSION) $(STELLAR) contract build --optimize
+	rustup run $(RUST_VERSION) $(STELLAR) contract build --package liquidity-pool --optimize
 	@echo "optimized: $(WASM)"
+
+## optimize-test-token: compile and optimize the open-mint test token
+optimize-test-token:
+	rustup run $(RUST_VERSION) $(STELLAR) contract build --package test-token --optimize
+	@echo "optimized: $(TEST_TOKEN_WASM)"
 
 ## deploy: deploy + run the constructor (set OWNER, TOKEN_A, TOKEN_B)
 deploy: optimize
@@ -99,6 +111,10 @@ deploy: optimize
 		--beneficiary $(BENEFICIARY) \
 		--max_caps '[$(MAX_CAP),$(MAX_CAP)]' \
 		--lp_max_supply $(LP_MAX_SUPPLY)
+
+## deploy-testnet: deploy testnet open-mint tokens and a pool; save addresses
+deploy-testnet:
+	STELLAR=$(STELLAR) NETWORK=$(NETWORK) SOURCE=$(SOURCE) RUST_VERSION=$(RUST_VERSION) TARGET_TRIPLE=$(TARGET_TRIPLE) DEPLOYMENTS_FILE=deployments/testnet.json scripts/deploy-testnet.sh
 
 ## setup: install a contract-safe rust toolchain + the wasm build target
 setup:
