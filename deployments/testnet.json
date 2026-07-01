@@ -1,7 +1,7 @@
 {
   "network": "testnet",
   "network_passphrase": "Test SDF Network ; September 2015",
-  "deployed_at": "2026-07-01T14:00:27Z",
+  "deployed_at": "2026-07-01T16:42:17Z",
   "source_identity": "perps-testnet",
   "deployer": "GBQNJHJJRTKU43GOW34BQXLMTRZFOZERDGQPBUZGXTJK3HQEEDXXL73B",
   "contracts": {
@@ -13,7 +13,8 @@
         "symbol": "sUSDC",
         "decimals": 7,
         "open_mint": true,
-        "supply_cap": null
+        "supply_cap": null,
+        "kind": "custom_soroban_token"
       },
       {
         "label": "sUSDT",
@@ -22,7 +23,8 @@
         "symbol": "sUSDT",
         "decimals": 7,
         "open_mint": true,
-        "supply_cap": null
+        "supply_cap": null,
+        "kind": "custom_soroban_token"
       },
       {
         "label": "sDAI",
@@ -31,18 +33,38 @@
         "symbol": "sDAI",
         "decimals": 7,
         "open_mint": true,
-        "supply_cap": null
+        "supply_cap": null,
+        "kind": "custom_soroban_token"
+      }
+    ],
+    "classic_assets": [
+      {
+        "label": "SUSD",
+        "asset_code": "SUSD",
+        "asset_issuer": "GCYFVS3J6JNJLJZ6JVPFCW7IGILIWEFGFPUAFBOBR4PQARR6OIBZHOAU",
+        "sac_contract": "CDDE66QMXWVUVEHLA5IRUJBHPJK3RFH6JIXCIJ5S6HOAXAPYR2AIZUWD",
+        "issuer_identity": "spreadless-sac-usd-issuer",
+        "holder": "GBQNJHJJRTKU43GOW34BQXLMTRZFOZERDGQPBUZGXTJK3HQEEDXXL73B",
+        "decimals": 7,
+        "kind": "stellar_classic_asset_with_sac"
       }
     ],
     "liquidity_pool": {
-      "label": "3-token-usd-pool",
-      "address": "CD7TRTJF54QP4BDIP4JJIKMBATYP4IZAGZQKGVSXW3VB457IG4RGSAA6",
+      "label": "4-token-usd-sac-pool",
+      "address": "CCAD3EH4P74PVYL3IC6ND7RSV6NYYOMUMNKRNVBJYOVIZP7Z2QS5XTSN",
       "owner": "GBQNJHJJRTKU43GOW34BQXLMTRZFOZERDGQPBUZGXTJK3HQEEDXXL73B",
       "beneficiary": "GBQNJHJJRTKU43GOW34BQXLMTRZFOZERDGQPBUZGXTJK3HQEEDXXL73B",
       "tokens": [
         "CBXN4CMLFVDNVFSGNXFGP5EWI77ISC5KH5UXSDBQETZCJHYHA3KEP4JJ",
         "CB2NS6KYG5ZBHHVKXCHYWLRRH4AKFXNWRYNSQTKNFW23CAY4SGSQVG75",
+        "CDDE66QMXWVUVEHLA5IRUJBHPJK3RFH6JIXCIJ5S6HOAXAPYR2AIZUWD",
         "CDKFYHC3EPRCZY4DIMCIBQ3PO5QPD6KZFFXNMLS4XENY2QNTZN2KLMRM"
+      ],
+      "token_labels": [
+        "sDAI",
+        "sUSDT",
+        "SUSD_SAC",
+        "sUSDC"
       ],
       "amp_factor": 100,
       "swap_fee": 100000,
@@ -50,11 +72,38 @@
       "max_caps": [
         "30000000000000000",
         "30000000000000000",
+        "30000000000000000",
         "30000000000000000"
       ],
       "lp_max_supply": "3000000000000000000"
     },
     "previous_pools": [
+      {
+        "label": "3-token-usd-pool",
+        "address": "CD7TRTJF54QP4BDIP4JJIKMBATYP4IZAGZQKGVSXW3VB457IG4RGSAA6",
+        "deployed_at": "2026-07-01T14:00:27Z",
+        "tokens": [
+          "CBXN4CMLFVDNVFSGNXFGP5EWI77ISC5KH5UXSDBQETZCJHYHA3KEP4JJ",
+          "CB2NS6KYG5ZBHHVKXCHYWLRRH4AKFXNWRYNSQTKNFW23CAY4SGSQVG75",
+          "CDKFYHC3EPRCZY4DIMCIBQ3PO5QPD6KZFFXNMLS4XENY2QNTZN2KLMRM"
+        ],
+        "initial_liquidity": {
+          "deposited_each_token": "1000000000000",
+          "deposit_result": "300000000000000"
+        },
+        "last_test_swap": {
+          "transaction": "9a4a969290830cb4368483d3555e0ad0f4edf24b50f37ccfbbcc184efc1edf6c",
+          "token_in": "CBXN4CMLFVDNVFSGNXFGP5EWI77ISC5KH5UXSDBQETZCJHYHA3KEP4JJ",
+          "token_out": "CB2NS6KYG5ZBHHVKXCHYWLRRH4AKFXNWRYNSQTKNFW23CAY4SGSQVG75",
+          "amount_in": "10000000",
+          "amount_out": "9998998",
+          "post_swap_reserves": [
+            "1000010000000",
+            "999990001002",
+            "1000000000000"
+          ]
+        }
+      },
       {
         "label": "2-token-usd-pool",
         "address": "CBMJOFJR6NHETIHQWS3YPJGUK267PMHZ6U7HHNXZS66CQNQTI2QPASEV",
@@ -74,23 +123,25 @@
     "provider": "GBQNJHJJRTKU43GOW34BQXLMTRZFOZERDGQPBUZGXTJK3HQEEDXXL73B",
     "minted_each_token": "1000000000000",
     "deposited_each_token": "1000000000000",
-    "deposit_result": "300000000000000"
+    "deposit_result": "400000000000000"
   },
   "last_test_swap": {
-    "transaction": "9a4a969290830cb4368483d3555e0ad0f4edf24b50f37ccfbbcc184efc1edf6c",
-    "token_in": "CBXN4CMLFVDNVFSGNXFGP5EWI77ISC5KH5UXSDBQETZCJHYHA3KEP4JJ",
+    "transaction": "67f92aea85b19c60d6441629ec507b5530bf8f7c71be49c162c3709836911fe1",
+    "token_in": "CDDE66QMXWVUVEHLA5IRUJBHPJK3RFH6JIXCIJ5S6HOAXAPYR2AIZUWD",
     "token_out": "CB2NS6KYG5ZBHHVKXCHYWLRRH4AKFXNWRYNSQTKNFW23CAY4SGSQVG75",
     "amount_in": "10000000",
     "amount_out": "9998998",
     "post_swap_reserves": [
-      "1000010000000",
+      "1000000000000",
       "999990001002",
+      "1000010000000",
       "1000000000000"
     ]
   },
   "notes": [
-    "The test token mint(to, amount) entrypoint is intentionally open and uncapped.",
+    "The custom test token mint(to, amount) entrypoint is intentionally open and uncapped.",
+    "The SUSD token is a testnet Stellar classic asset wrapped by a SAC contract.",
     "Pool token order is canonical and may differ from the display labels above.",
-    "The active liquidity_pool is the 3-token USD-variant pool."
+    "The active liquidity_pool is the 4-token USD-variant pool including the SUSD SAC."
   ]
 }

@@ -226,6 +226,10 @@ first pool deposit, and writes the resulting contract addresses to
 `deployments/testnet.json`. This deployment is intentionally testnet-only; the
 token `mint` entrypoint has no authorization.
 
+The current checked-in testnet deployment also includes `SUSD`, a testnet
+classic Stellar asset wrapped by SAC, in the active pool recorded in
+`deployments/testnet.json`.
+
 ## Safety Notes
 
 - Keep token order stable. Amount arrays, reserve arrays, caps, and minimums all
