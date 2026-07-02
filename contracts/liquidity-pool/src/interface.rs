@@ -1,20 +1,12 @@
-//! Black-box interface for the `LiquidityPool` contract.
+//! The `LiquidityPool` contract's entrypoints, minus the deploy-time
+//! constructor. The contract implements this trait via
+//! `#[contractimpl(contracttrait)]`, so the interface and implementation cannot
+//! drift (a mismatch won't compile), and the same macro generates the
+//! `LiquidityPoolClient` used by callers and tests.
 //!
-//! This is a *reference* trait — the contract exposes exactly these entrypoints
-//! (via its inherent `impl LiquidityPool`); it does not literally implement this
-//! trait. Read it to write tests without touching the implementation.
-//!
-//! Tests don't call the trait — they use the macro-generated
-//! `LiquidityPoolClient`, whose methods mirror these but (a) drop the leading
-//! `Env` and (b) take args by reference. For example:
-//!     fn deposit(e: Env, to: Address, amounts_in: Vec<i128>, min_lp_out: i128) -> i128
-//! becomes, on the client:
-//!     client.deposit(&to, &amounts_in, &min_lp_out) -> i128
-//!
-//! Construct one in a test with the constructor args as a tuple, IN ORDER:
-//!     let id = env.register(LiquidityPool, (owner, tokens, amp_factor, swap_fee,
-//!         protocol_fee, beneficiary, max_caps, lp_max_supply));
-//!     let client = LiquidityPoolClient::new(&env, &id);
+//! The constructor is separate (constructors can't be trait methods), exposed as
+//! the inherent `__constructor(owner, tokens, amp_factor, swap_fee, protocol_fee,
+//! beneficiary, max_caps, lp_max_supply)`.
 //!
 //! ## Conventions
 //! - **Amounts** are in each token's own raw on-chain units (`i128`, must be
@@ -36,21 +28,11 @@
 //! - Failures revert with a typed `Error` (codes 1..=20, see `error.rs`);
 //!   missing authorization reverts with a host auth error.
 
-// The contract implements this trait (for wasm + tests), but a plain host
-// `cargo build`/`cargo check` doesn't "use" it, which trips dead-code. Silence
-// it — the wasm and test builds are warning-clean.
-#![allow(dead_code)]
+#![allow(dead_code)] // trait methods aren't "used" on a plain host build
 
 use soroban_sdk::{contracttrait, Address, Env, Vec};
 
-/// The contract's entrypoints — everything except the deploy-time constructor.
-/// `LiquidityPool` implements this via `#[contractimpl(contracttrait)]`, so the
-/// implementation and this interface cannot drift (a mismatch won't compile).
-///
-/// The constructor is exposed separately as the contract's inherent
-/// `__constructor(owner, tokens, amp_factor, swap_fee, protocol_fee,
-/// beneficiary, max_caps, lp_max_supply)` — see the module docs above for its
-/// parameters and validation (constructors can't be trait methods).
+/// The contract's entrypoints; see the module docs for conventions.
 #[contracttrait]
 pub trait LiquidityPoolInterface {
     // --- liquidity (require `to`'s auth; blocked while paused) ---
@@ -183,8 +165,8 @@ pub trait LiquidityPoolInterface {
 }
 
 // ---------------------------------------------------------------------------
-// Also exposed by the contract (and on `LiquidityPoolClient`), from OpenZeppelin
-// — not redeclared above to avoid drift, but available to tests:
+// Also exposed by the contract (and on `LiquidityPoolClient`) from OpenZeppelin,
+// not redeclared above to avoid drift:
 //
 // 2-step ownership (stellar_access::ownable::Ownable):
 //   get_owner(e) -> Option<Address>
@@ -206,6 +188,6 @@ pub trait LiquidityPoolInterface {
 //   name(e) -> String
 //   symbol(e) -> String
 //
-// LP exits must use `withdraw` or `withdraw_one_token`; direct burns are
-// disabled so total supply cannot be reduced without updating reserves.
+// LP exits must use `withdraw`/`withdraw_one_token`; direct burns are disabled
+// so total supply cannot be reduced without updating reserves.
 // ---------------------------------------------------------------------------
