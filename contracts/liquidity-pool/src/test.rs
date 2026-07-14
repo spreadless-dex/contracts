@@ -5,9 +5,26 @@ use soroban_sdk::{
     vec, Address, Env, MuxedAddress, String,
 };
 
+use crate::error::Error;
+use crate::math::{
+    self,
+    fixed_math::{FixedComplement, FixedDiv, FixedMul},
+    AMP_PRECISION,
+};
 use crate::{LiquidityPool, LiquidityPoolClient};
 
 const UNIT: i128 = 1_000_000_000_000; // 1e12 raw of a 7-decimal SAC (1,000,000.0 tokens)
+
+/// The swap fee every `setup*` pool is constructed with (0.01%; 1e9 == 100%).
+const SWAP_FEE: u64 = 100_000;
+
+/// Raw -> internal scaling for the 7-decimal SACs used throughout: x100.
+const SCALE: i128 = 100;
+
+/// The host-level error a `try_` client call surfaces for a contract error.
+fn contract_err(err: Error) -> soroban_sdk::Error {
+    soroban_sdk::Error::from_contract_error(err as u32)
+}
 
 #[derive(Clone)]
 #[contracttype]
@@ -231,6 +248,62 @@ fn assert_pool_balances_match_reserves(
     );
 }
 
+/// The pool's reserves on the internal 9-decimal scale the math module uses.
+fn internal_reserves(pool: &LiquidityPoolClient) -> std::vec::Vec<u64> {
+    pool.get_reserves()
+        .iter()
+        .map(|r| u64::try_from(r * SCALE).unwrap())
+        .collect()
+}
+
+/// The pool's current StableSwap invariant D, recomputed from public state
+/// (`get_reserves` + `get_amp`) through the same math module the contract uses.
+fn pool_invariant(e: &Env, pool: &LiquidityPoolClient) -> u64 {
+    let balances = internal_reserves(pool);
+    let amp = pool.get_amp() as u64 * AMP_PRECISION;
+    math::calc_invariant(e, amp, &balances, None).unwrap()
+}
+
+/// Reproduce the contract's exact-in quote from public state: scale the raw
+/// input to internal units, run the stable math for the gross output, take the
+/// swap fee off the output, and scale back to raw. Asserting executed swaps
+/// against this proves the on-chain execution path returns exactly what the
+/// (vector-validated) math module says it should.
+fn quote_swap_exact_in(
+    e: &Env,
+    pool: &LiquidityPoolClient,
+    i: usize,
+    j: usize,
+    amount_in_raw: i128,
+) -> i128 {
+    let balances = internal_reserves(pool);
+    let amp = pool.get_amp() as u64 * AMP_PRECISION;
+    let invariant = math::calc_invariant(e, amp, &balances, None).unwrap();
+    let in_int = u64::try_from(amount_in_raw * SCALE).unwrap();
+    let gross = math::calc_out_given_in(e, amp, &balances, i, j, in_int, invariant).unwrap();
+    let net = gross.mul_down(SWAP_FEE.complement()).unwrap();
+    (net as i128) / SCALE
+}
+
+/// Reproduce the contract's exact-out quote: gross the requested output up by
+/// the fee, solve for the required input, and round the raw charge up — the
+/// same rounding the contract applies.
+fn quote_swap_exact_out(
+    e: &Env,
+    pool: &LiquidityPoolClient,
+    i: usize,
+    j: usize,
+    amount_out_raw: i128,
+) -> i128 {
+    let balances = internal_reserves(pool);
+    let amp = pool.get_amp() as u64 * AMP_PRECISION;
+    let invariant = math::calc_invariant(e, amp, &balances, None).unwrap();
+    let net_int = u64::try_from(amount_out_raw * SCALE).unwrap();
+    let gross = net_int.div_up(SWAP_FEE.complement()).unwrap();
+    let in_int = math::calc_in_given_out(e, amp, &balances, i, j, gross, invariant).unwrap();
+    in_int.div_ceil(SCALE as u64) as i128
+}
+
 #[test]
 fn deposit_then_full_withdraw_is_exact_roundtrip() {
     let (e, user, pool_id, addr_a, addr_b) = setup();
@@ -349,12 +422,16 @@ fn swap_exact_in_works() {
     let a_before = token_a.balance(&user);
     let b_before = token_b.balance(&user);
 
-    let amount_in = 1_000_000_000i128;
+    let amount_in = 1_000_000_000i128; // 0.1% of the reserve
+    let expected_out = quote_swap_exact_in(&e, &pool, 0, 1, amount_in);
     let out = pool.swap_exact_in(&user, &addr_a, &addr_b, &amount_in, &0i128);
 
-    assert!(out > 0);
-    assert!(out < amount_in); // fee charged + slippage, ~1:1 price
-    assert!(out > amount_in * 99 / 100); // but close (high amp, tiny fee)
+    // The executed output equals the independent math-module quote exactly.
+    assert_eq!(out, expected_out);
+    assert!(out < amount_in); // fee + curve, ~1:1 price
+                              // Total execution cost (0.01% output fee + curve slippage) stays under
+                              // 2 bps of the input for a trade this size (measured: ~1.1 bps).
+    assert!(amount_in - out < amount_in * 2 / 10_000);
     assert_eq!(token_a.balance(&user), a_before - amount_in);
     assert_eq!(token_b.balance(&user), b_before + out);
 
@@ -376,31 +453,53 @@ fn swap_exact_out_works() {
     let a_before = token_a.balance(&user);
     let b_before = token_b.balance(&user);
 
-    let amount_out = 1_000_000_000i128;
+    let amount_out = 1_000_000_000i128; // 0.1% of the reserve
+    let expected_in = quote_swap_exact_out(&e, &pool, 0, 1, amount_out);
     let spent = pool.swap_exact_out(&user, &addr_a, &addr_b, &amount_out, &i128::MAX);
 
+    // The executed charge equals the independent math-module quote exactly.
+    assert_eq!(spent, expected_in);
     assert_eq!(token_b.balance(&user), b_before + amount_out); // received EXACTLY amount_out
     assert_eq!(token_a.balance(&user), a_before - spent);
-    assert!(spent > amount_out); // paid fee + slippage
-    assert!(spent < amount_out * 101 / 100); // but close
+    assert!(spent > amount_out); // paid fee + curve
+                                 // Total execution cost stays under 2 bps of the output for a trade this
+                                 // size (mirror of the exact-in bound).
+    assert!(spent - amount_out < amount_out * 2 / 10_000);
     assert_pool_balances_match_reserves(&e, &pool, &pool_id, &addr_a, &addr_b);
 }
 
+// The exact-out mirror of `swap_exact_in_rejects_when_min_out_not_met`: a
+// spending cap one stroop below the true cost rejects with `SlippageExceeded`
+// and moves nothing; a cap exactly at the true cost executes and spends it.
 #[test]
-#[should_panic]
-fn swap_exact_out_respects_max_in() {
+fn swap_exact_out_rejects_when_max_in_exceeded() {
     let (e, user, pool_id, addr_a, addr_b) = setup();
     let pool = LiquidityPoolClient::new(&e, &pool_id);
+    let token_a = TokenClient::new(&e, &addr_a);
+    let token_b = TokenClient::new(&e, &addr_b);
     pool.deposit(&user, &vec![&e, UNIT, UNIT], &0i128);
-    StellarAssetClient::new(&e, &addr_a).mint(&user, &1_000_000_000);
-    // The true cost exceeds amount_out, so max_in == amount_out must revert.
-    pool.swap_exact_out(
-        &user,
-        &addr_a,
-        &addr_b,
-        &1_000_000_000i128,
-        &1_000_000_000i128,
-    );
+    StellarAssetClient::new(&e, &addr_a).mint(&user, &2_000_000_000);
+
+    let amount_out = 1_000_000_000i128;
+    let cost = quote_swap_exact_out(&e, &pool, 0, 1, amount_out);
+    assert!(cost > amount_out); // fee + curve price the input above the output
+
+    let a_before = token_a.balance(&user);
+    let b_before = token_b.balance(&user);
+    let reserves_before = pool.get_reserves();
+
+    let rejected = pool.try_swap_exact_out(&user, &addr_a, &addr_b, &amount_out, &(cost - 1));
+    assert_eq!(rejected, Err(Ok(contract_err(Error::SlippageExceeded))));
+
+    // The rejected swap moved nothing.
+    assert_eq!(token_a.balance(&user), a_before);
+    assert_eq!(token_b.balance(&user), b_before);
+    assert_eq!(pool.get_reserves(), reserves_before);
+    assert_pool_balances_match_reserves(&e, &pool, &pool_id, &addr_a, &addr_b);
+
+    // At exactly the true cost the same swap executes and spends it.
+    let spent = pool.swap_exact_out(&user, &addr_a, &addr_b, &amount_out, &cost);
+    assert_eq!(spent, cost);
 }
 
 #[test]
@@ -782,14 +881,163 @@ fn withdraw_below_min_out_reverts() {
 
 // --- swap ---
 
+// The user's slippage tolerance is enforced against the true execution price,
+// not approximately: a `min_out` one stroop above the achievable output must
+// reject with `SlippageExceeded` and leave every balance untouched, while a
+// `min_out` exactly at the achievable output must execute and deliver it.
 #[test]
-#[should_panic]
-fn swap_exact_in_below_min_out_reverts() {
+fn swap_exact_in_rejects_when_min_out_not_met() {
     let (e, user, pool_id, addr_a, addr_b) = setup();
     let pool = LiquidityPoolClient::new(&e, &pool_id);
+    let token_a = TokenClient::new(&e, &addr_a);
+    let token_b = TokenClient::new(&e, &addr_b);
     pool.deposit(&user, &vec![&e, UNIT, UNIT], &0i128);
     StellarAssetClient::new(&e, &addr_a).mint(&user, &1_000_000_000);
-    pool.swap_exact_in(&user, &addr_a, &addr_b, &1_000_000_000i128, &i128::MAX);
+
+    let amount_in = 1_000_000_000i128;
+    let quote = quote_swap_exact_in(&e, &pool, 0, 1, amount_in);
+    assert!(quote > 0);
+
+    let a_before = token_a.balance(&user);
+    let b_before = token_b.balance(&user);
+    let reserves_before = pool.get_reserves();
+    let invariant_before = pool_invariant(&e, &pool);
+
+    let rejected = pool.try_swap_exact_in(&user, &addr_a, &addr_b, &amount_in, &(quote + 1));
+    assert_eq!(rejected, Err(Ok(contract_err(Error::SlippageExceeded))));
+
+    // The rejected swap moved nothing: user balances, pool reserves, actual
+    // token balances, and the invariant are all exactly as before.
+    assert_eq!(token_a.balance(&user), a_before);
+    assert_eq!(token_b.balance(&user), b_before);
+    assert_eq!(pool.get_reserves(), reserves_before);
+    assert_eq!(pool_invariant(&e, &pool), invariant_before);
+    assert_pool_balances_match_reserves(&e, &pool, &pool_id, &addr_a, &addr_b);
+
+    // At exactly the quoted output the same swap executes and delivers it.
+    let out = pool.swap_exact_in(&user, &addr_a, &addr_b, &amount_in, &quote);
+    assert_eq!(out, quote);
+}
+
+// Contract-level invariant accounting: D (recomputed from public reserves)
+// never decreases across swaps, and because the LP share of the swap fee stays
+// in the reserves, D grows by approximately the fee charged. This is the
+// executable version of "fees accrue to LPs" and "a swap cannot leak value".
+#[test]
+fn swap_never_decreases_invariant_and_fee_accrues_to_lps() {
+    let (e, user, pool_id, addr_a, addr_b) = setup();
+    e.cost_estimate().budget().reset_unlimited();
+    let pool = LiquidityPoolClient::new(&e, &pool_id);
+    pool.deposit(&user, &vec![&e, UNIT, UNIT], &0i128);
+    let amount_in = 100_000_000_000i128; // 10% of the reserve
+    StellarAssetClient::new(&e, &addr_a).mint(&user, &amount_in);
+
+    // Expected fee for this swap in internal units: gross curve output minus
+    // the net paid out. With protocol_fee == 0 all of it stays in the pool.
+    let balances = internal_reserves(&pool);
+    let amp = pool.get_amp() as u64 * AMP_PRECISION;
+    let d_before = math::calc_invariant(&e, amp, &balances, None).unwrap();
+    let in_int = u64::try_from(amount_in * SCALE).unwrap();
+    let gross = math::calc_out_given_in(&e, amp, &balances, 0, 1, in_int, d_before).unwrap();
+    let fee = gross - gross.mul_down(SWAP_FEE.complement()).unwrap();
+
+    pool.swap_exact_in(&user, &addr_a, &addr_b, &amount_in, &0i128);
+
+    let d_after = pool_invariant(&e, &pool);
+    assert!(d_after > d_before, "the retained fee must grow D");
+    let growth = d_after - d_before;
+    // The fee sits on one side of the pool, so D grows by ~the fee to first
+    // order (not exactly); a 25% window is far tighter than any real leak.
+    assert!(
+        growth >= fee * 3 / 4 && growth <= fee * 5 / 4,
+        "D grew by {} for a fee of {}",
+        growth,
+        fee
+    );
+
+    // Swinging the pool back the other way must also never decrease D.
+    let b_balance = TokenClient::new(&e, &addr_b).balance(&user);
+    assert!(b_balance > 0);
+    pool.swap_exact_in(&user, &addr_b, &addr_a, &b_balance, &0i128);
+    assert!(pool_invariant(&e, &pool) >= d_after);
+}
+
+// Like `setup` but with `n` pool tokens, to show the pool is not hard-coded
+// to one pair. Mints 2*UNIT of each token to the user.
+fn setup_n(n: usize) -> (Env, Address, Address, std::vec::Vec<Address>) {
+    let e = Env::default();
+    e.mock_all_auths();
+    let admin = Address::generate(&e);
+    let user = Address::generate(&e);
+    let beneficiary = Address::generate(&e);
+
+    let mut addrs: std::vec::Vec<Address> = (0..n)
+        .map(|_| {
+            e.register_stellar_asset_contract_v2(admin.clone())
+                .address()
+        })
+        .collect();
+    addrs.sort();
+
+    let mut tokens = soroban_sdk::Vec::new(&e);
+    let mut caps = soroban_sdk::Vec::new(&e);
+    for addr in &addrs {
+        StellarAssetClient::new(&e, addr).mint(&user, &(2 * UNIT));
+        tokens.push_back(addr.clone());
+        caps.push_back(10_000_000_000_000_000i128);
+    }
+
+    let pool_id = e.register(
+        LiquidityPool,
+        (
+            user.clone(),
+            tokens,
+            100u32,
+            SWAP_FEE,
+            0u64,
+            beneficiary,
+            caps,
+            1_000_000_000_000_000_000i128,
+        ),
+    );
+    (e, user, pool_id, addrs)
+}
+
+// Every ordered pair of a 3-token pool swaps at the quoted price with low
+// slippage — covering direction symmetry (a->b and b->a) and pairs beyond the
+// first two tokens — while D never decreases across the whole sequence.
+#[test]
+fn three_token_pool_swaps_every_pair_at_quoted_price() {
+    let (e, user, pool_id, addrs) = setup_n(3);
+    e.cost_estimate().budget().reset_unlimited();
+    let pool = LiquidityPoolClient::new(&e, &pool_id);
+    pool.deposit(&user, &vec![&e, UNIT, UNIT, UNIT], &0i128);
+
+    let amount_in = 1_000_000_000i128; // 0.1% of each reserve
+    let mut d_prev = pool_invariant(&e, &pool);
+    for i in 0..3usize {
+        for j in 0..3usize {
+            if i == j {
+                continue;
+            }
+            let quote = quote_swap_exact_in(&e, &pool, i, j, amount_in);
+            // `min_out` at the exact quote: executes and delivers exactly it.
+            let out = pool.swap_exact_in(&user, &addrs[i], &addrs[j], &amount_in, &quote);
+            assert_eq!(out, quote, "pair ({}, {})", i, j);
+            // Cost stays under 3 bps (1 bp fee + curve) even as the pool
+            // drifts slightly off balance over the sequence of six swaps.
+            assert!(
+                amount_in - out < amount_in * 3 / 10_000,
+                "pair ({}, {})",
+                i,
+                j
+            );
+
+            let d = pool_invariant(&e, &pool);
+            assert!(d >= d_prev, "D decreased on pair ({}, {})", i, j);
+            d_prev = d;
+        }
+    }
 }
 
 #[test]
