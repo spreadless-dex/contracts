@@ -56,7 +56,7 @@ MAX_CAP        ?= 10000000000000000        # 1e16 raw, per token
 LP_MAX_SUPPLY  ?= 1000000000000000000      # 1e18
 
 .DEFAULT_GOAL := build
-.PHONY: all build build-test-token bindings test optimize optimize-test-token deploy deploy-testnet setup keys fund clean fmt fmt-check lint help
+.PHONY: all build build-test-token bindings test optimize optimize-test-token deploy deploy-testnet testnet-evidence setup keys fund clean fmt fmt-check lint help
 
 ## all: build then test
 all: build test
@@ -115,6 +115,10 @@ deploy: optimize
 ## deploy-testnet: deploy testnet open-mint tokens and a pool; save addresses
 deploy-testnet:
 	STELLAR=$(STELLAR) NETWORK=$(NETWORK) SOURCE=$(SOURCE) RUST_VERSION=$(RUST_VERSION) TARGET_TRIPLE=$(TARGET_TRIPLE) DEPLOYMENTS_FILE=deployments/testnet.json scripts/deploy-testnet.sh
+
+## testnet-evidence: run the swap-evidence matrix; writes docs/testnet-swap-evidence.md
+testnet-evidence:
+	STELLAR=$(STELLAR) NETWORK=$(NETWORK) SOURCE=$(SOURCE) scripts/testnet-swap-evidence.sh
 
 ## setup: install a contract-safe rust toolchain + the wasm build target
 setup:

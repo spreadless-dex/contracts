@@ -7,6 +7,14 @@ share token, and keeps pool accounting in one contract.
 The contract is implemented in Rust with `soroban-sdk` 26 and OpenZeppelin
 Stellar helpers for ownership, pause control, and token behavior.
 
+The pool math is a port of Stabble's Solana stable-swap program, which itself
+follows Balancer's StableMath and the Curve StableSwap invariant.
+[docs/provenance.md](docs/provenance.md) breaks down explicitly what was
+translated as-is, what was adapted to Soroban, and what is new in this
+repository; [docs/testnet-swap-evidence.md](docs/testnet-swap-evidence.md)
+records executed testnet swap transactions with quotes, tolerances, and
+observed slippage.
+
 ## How It Works
 
 The pool tracks a sorted list of token contracts and a normalized reserve for
@@ -132,6 +140,9 @@ All amount vectors use the pool token order returned by `get_tokens()`.
 │       │   ├── math            # invariant, swap, deposit, withdraw math
 │       │   └── pool            # state, scaling, fees, quotes, amp ramps
 │       └── Cargo.toml
+├── docs
+│   ├── provenance.md           # translated vs adapted vs new, vs upstream
+│   └── testnet-swap-evidence.md# recorded testnet swaps with slippage data
 ├── Cargo.toml
 ├── Makefile
 └── README.md
