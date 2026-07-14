@@ -17,3 +17,4 @@ stellar-macros = { workspace = true }
 
 [dev-dependencies]
 soroban-sdk = { workspace = true, features = ["testutils"] }
+proptest = { workspace = true }

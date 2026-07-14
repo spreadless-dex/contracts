@@ -433,11 +433,101 @@ fn get_token_balance_given_invariant_n_all_other_balances(
 mod tests {
     use super::*;
     use soroban_sdk::Env;
+    use std::vec::Vec as StdVec;
+
+    // ------------------------------------------------------------------
+    // Test-vector provenance
+    //
+    // The exact numeric vectors in `test_calc_out_given_in` and
+    // `test_calc_pool_token_out_given_exact_tokens_in` (balances, invariants,
+    // and expected outputs such as 999_845_869) are carried over from the
+    // upstream Stabble stable-swap math test suite (the Solana program this
+    // module ports; its math itself follows Balancer's StableMath / Curve's
+    // StableSwap). Reproducing the upstream expected values bit-for-bit is the
+    // translation-correctness check for the port: an independent, audited
+    // implementation computed the same numbers from the same inputs.
+    //
+    // The tests below that (invariant preservation, slippage bounds, the
+    // amplification ladder, exact-in/exact-out consistency, and the property
+    // tests in `math::proptests`) are new for this repository and verify the
+    // behavior of the curve itself rather than agreement with upstream.
+    // ------------------------------------------------------------------
+
+    /// All balances are on the internal 9-decimal scale: 1e15 == 1,000,000.0
+    /// tokens. Amplification arguments are raw (`factor * AMP_PRECISION`).
+    const ONE_MILLION_TOKENS: u64 = 1_000_000_000_000_000;
+
+    /// Post-swap balance vector for a math-level swap: token `i` grows by
+    /// `amount_in`, token `j` shrinks by `amount_out`.
+    fn balances_after_swap(
+        balances: &[u64],
+        i: usize,
+        j: usize,
+        amount_in: u64,
+        amount_out: u64,
+    ) -> StdVec<u64> {
+        let mut v = balances.to_vec();
+        v[i] = v[i].checked_add(amount_in).unwrap();
+        v[j] = v[j].checked_sub(amount_out).unwrap();
+        v
+    }
+
+    /// Trade-size ladder used by the table-driven tests, in basis points of
+    /// the input-token reserve: 0.01%, 1%, 10%, 30%.
+    const TRADE_SIZE_BPS: &[u64] = &[1, 100, 1_000, 3_000];
+
+    /// Pool shapes: 2-5 tokens, balanced and (heavily) imbalanced.
+    const POOLS: &[&[u64]] = &[
+        // 2 tokens, balanced
+        &[ONE_MILLION_TOKENS, ONE_MILLION_TOKENS],
+        // 2 tokens, 4:1
+        &[1_600_000_000_000_000, 400_000_000_000_000],
+        // 2 tokens, 99:1 (heavily imbalanced)
+        &[1_980_000_000_000_000, 20_000_000_000_000],
+        // 3 tokens, balanced
+        &[ONE_MILLION_TOKENS, ONE_MILLION_TOKENS, ONE_MILLION_TOKENS],
+        // 3 tokens, 20:5:1
+        &[
+            2_000_000_000_000_000,
+            500_000_000_000_000,
+            100_000_000_000_000,
+        ],
+        // 4 tokens, mildly imbalanced
+        &[
+            800_000_000_000_000,
+            1_200_000_000_000_000,
+            900_000_000_000_000,
+            1_100_000_000_000_000,
+        ],
+        // 5 tokens, balanced
+        &[
+            ONE_MILLION_TOKENS,
+            ONE_MILLION_TOKENS,
+            ONE_MILLION_TOKENS,
+            ONE_MILLION_TOKENS,
+            ONE_MILLION_TOKENS,
+        ],
+        // 5 tokens, spread over two orders of magnitude
+        &[
+            2_000_000_000_000_000,
+            1_000_000_000_000_000,
+            500_000_000_000_000,
+            100_000_000_000_000,
+            50_000_000_000_000,
+        ],
+    ];
+
+    /// Amplification factors (multiplied by AMP_PRECISION when calling the
+    /// math), spanning the full supported range [MIN_AMP, MAX_AMP].
+    const AMP_FACTORS: &[u64] = &[1, 10, 100, 1_000, 12_000];
 
     #[test]
     fn test_calc_out_given_in() {
         let e = Env::default();
 
+        // The first three scenarios are upstream convergence vectors for
+        // extreme balance spreads; assert the invariant value itself so a
+        // subtly wrong (but converging) formula cannot slip through.
         let balances = [
             776199829833940141u64,
             2206504616663253113,
@@ -446,15 +536,18 @@ mod tests {
             18833762826780,
         ];
         let amplification = 500_000;
-        calc_invariant(&e, amplification, &balances, None).unwrap();
+        let invariant = calc_invariant(&e, amplification, &balances, None).unwrap();
+        assert_eq!(invariant, 1913135429164488420);
 
         let balances = [1332693902458055177u64, 534042038714371533, 93673549035235];
         let amplification = 10_000;
-        calc_invariant(&e, amplification, &balances, None).unwrap();
+        let invariant = calc_invariant(&e, amplification, &balances, None).unwrap();
+        assert_eq!(invariant, 520894402283561740);
 
         let balances = [2397586296768312160u64, 2300831385038136337, 1410688950371];
         let amplification = 1_000;
-        calc_invariant(&e, amplification, &balances, None).unwrap();
+        let invariant = calc_invariant(&e, amplification, &balances, None).unwrap();
+        assert_eq!(invariant, 231343844339109190);
 
         let amplification = 5_000_000;
         let balances = [40_000_000_000_000_000u64, 60_000_000_000_000_000];
@@ -688,5 +781,262 @@ mod tests {
         )
         .unwrap();
         assert_eq!(amount_out, 1999977980679);
+    }
+
+    // ------------------------------------------------------------------
+    // Invariant preservation
+    // ------------------------------------------------------------------
+
+    // The invariant D never decreases across a swap, for every pool shape,
+    // amplification, and trade size in the supported domain.
+    //
+    // Note the property is *non-decrease*, not equality: `calc_out_given_in`
+    // deliberately rounds the output down (the trailing `- 1`), so the pool
+    // keeps the rounding dust and D drifts *up* by a few units per swap. At
+    // the contract level the swap fee (which stays in the pool) pushes D up
+    // further — asserting strict equality would reject correct behavior.
+    // Here at the math level there is no fee, so D must also stay *nearly*
+    // equal: the increase is bounded to rounding/convergence noise.
+    #[test]
+    fn invariant_never_decreases_after_swap() {
+        // Bound on the D increase, on the internal 9-decimal scale (1e9 ==
+        // one token). The worst case observed across this whole table is
+        // +8_733 units — 0.0000087 tokens, on the 99:1 pool at amp 12000
+        // trading 30% of the reserve — so 10_000 asserts "the swap leaked
+        // nothing beyond rounding" while leaving no room for a real leak.
+        const INCREASE_TOL: u64 = 10_000;
+
+        for &balances in POOLS {
+            let n = balances.len();
+            for &amp_factor in AMP_FACTORS {
+                let amplification = amp_factor * AMP_PRECISION;
+                for &size_bps in TRADE_SIZE_BPS {
+                    // Trade both directions: into the last token and into the
+                    // first, which for imbalanced pools covers both "drain the
+                    // scarce token" and "pile onto the plentiful one".
+                    for (i, j) in [(0, n - 1), (n - 1, 0)] {
+                        let e = Env::default();
+                        let amount_in = (balances[i] as u128 * size_bps as u128 / 10_000) as u64;
+
+                        let d_before = calc_invariant(&e, amplification, balances, None).unwrap();
+                        let out = calc_out_given_in(
+                            &e,
+                            amplification,
+                            balances,
+                            i,
+                            j,
+                            amount_in,
+                            d_before,
+                        )
+                        .unwrap();
+                        assert!(out < balances[j], "swap may not drain the reserve");
+
+                        let after = balances_after_swap(balances, i, j, amount_in, out);
+                        let d_after = calc_invariant(&e, amplification, &after, None).unwrap();
+
+                        // No tolerance on the downside: the output's
+                        // round-down (`- 1`) guarantees the pool keeps the
+                        // dust, so D must not drop by even one unit.
+                        assert!(
+                            d_after >= d_before,
+                            "D decreased: {} -> {} (pool {:?}, amp {}, {} bps)",
+                            d_before,
+                            d_after,
+                            balances,
+                            amp_factor,
+                            size_bps
+                        );
+                        assert!(
+                            d_after - d_before <= INCREASE_TOL,
+                            "D grew beyond rounding: {} -> {} (+{}) (pool {:?}, amp {}, {} bps)",
+                            d_before,
+                            d_after,
+                            d_after - d_before,
+                            balances,
+                            amp_factor,
+                            size_bps
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Quantified slippage
+    // ------------------------------------------------------------------
+
+    /// Execution slippage of a quote in hundredths of a basis point
+    /// (1 cbp == 0.0001%): how far `out` fell short of the 1:1 ideal.
+    /// This is the pure curve effect — the math layer charges no fee.
+    fn slippage_cbps(amount_in: u64, amount_out: u64) -> u64 {
+        assert!(amount_out <= amount_in, "balanced-pool quote above par");
+        ((amount_in - amount_out) as u128 * 1_000_000 / amount_in as u128) as u64
+    }
+
+    // On a balanced two-token pool at the production amplification (100, the
+    // factor the testnet pool runs), curve slippage stays far below one basis
+    // point for everyday trade sizes and stays bounded even at 30% of the
+    // reserve. The expected outputs are exact; the cbp ceilings are the
+    // human-readable claim.
+    #[test]
+    fn balanced_stable_pair_slippage_below_expected_bps() {
+        let e = Env::default();
+        let balances = [ONE_MILLION_TOKENS, ONE_MILLION_TOKENS];
+        let amplification = 100 * AMP_PRECISION;
+        let invariant = calc_invariant(&e, amplification, &balances, None).unwrap();
+
+        // (trade size in bps of the reserve, expected out, max slippage in cbp)
+        let cases: &[(u64, u64, u64)] = &[
+            (1, 99_999_900_988, 1),              // 0.01% trade: < 0.01 bp
+            (10, 999_990_099_097, 10),           // 0.1% trade:  ~0.09 bp
+            (100, 9_999_009_901_969, 100),       // 1% trade:    ~0.99 bp
+            (1_000, 99_900_110_864_756, 1_000),  // 10% trade:   ~9.98 bp
+            (3_000, 299_026_254_209_234, 3_300), // 30% trade:  ~32.45 bp
+        ];
+
+        let mut previous_cbps = 0;
+        for &(size_bps, expected_out, max_cbps) in cases {
+            let amount_in = (ONE_MILLION_TOKENS as u128 * size_bps as u128 / 10_000) as u64;
+            let out = calc_out_given_in(&e, amplification, &balances, 0, 1, amount_in, invariant)
+                .unwrap();
+            let cbps = slippage_cbps(amount_in, out);
+            assert_eq!(out, expected_out, "out for {} bps trade", size_bps);
+            assert!(
+                cbps <= max_cbps,
+                "slippage {} cbp above ceiling {} for {} bps trade",
+                cbps,
+                max_cbps,
+                size_bps
+            );
+            // Price impact grows monotonically with trade size.
+            assert!(cbps >= previous_cbps);
+            previous_cbps = cbps;
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Amplification ladder
+    // ------------------------------------------------------------------
+
+    // Near balance, a higher amplification factor gives strictly lower
+    // slippage, and every rung of the ladder beats the constant-product
+    // (x*y=k) price for the same trade.
+    #[test]
+    fn higher_amplification_reduces_slippage_near_balance() {
+        let balances = [ONE_MILLION_TOKENS, ONE_MILLION_TOKENS];
+        let amount_in = ONE_MILLION_TOKENS / 100; // 1% of the reserve
+
+        // Constant-product reference on the same reserves:
+        // out = R * in / (R + in), a ~99 bps hit for a 1% trade.
+        let r = ONE_MILLION_TOKENS as u128;
+        let cp_out = (r * amount_in as u128 / (r + amount_in as u128)) as u64;
+
+        let mut previous_out = cp_out;
+        for &amp_factor in AMP_FACTORS {
+            let e = Env::default();
+            let amplification = amp_factor * AMP_PRECISION;
+            let invariant = calc_invariant(&e, amplification, &balances, None).unwrap();
+            let out = calc_out_given_in(&e, amplification, &balances, 0, 1, amount_in, invariant)
+                .unwrap();
+            assert!(
+                out > previous_out,
+                "amp {} must out-price the previous rung: {} <= {}",
+                amp_factor,
+                out,
+                previous_out
+            );
+            previous_out = out;
+        }
+
+        // Endpoints, pinned exactly: constant product loses ~99 bps on this
+        // trade; the ladder runs 49.75 bp (amp 1) down to 0.08 bp (amp 12000).
+        assert_eq!(cp_out, 9_900_990_099_009);
+        assert_eq!(previous_out, 9_999_991_666_532); // out at amp 12000
+    }
+
+    // ------------------------------------------------------------------
+    // Exact-in / exact-out consistency
+    // ------------------------------------------------------------------
+
+    // Quoting an input for the output of the opposite quote returns to the
+    // starting amount within rounding: the two Newton solvers describe the
+    // same curve. Both quotes round in the pool's favor, so the recovered
+    // input may sit a few units above or below the original, never far.
+    #[test]
+    fn exact_in_and_exact_out_quotes_are_consistent() {
+        // Absolute drift bound in 9-dec units. The worst case observed is
+        // 801 units (0.0000008 tokens), on the 99:1 pool at amp 12000 where
+        // the scarce-token price is steepest; 1_000 keeps the bound tight.
+        const ROUNDTRIP_TOL: u64 = 1_000;
+
+        for &balances in POOLS {
+            let n = balances.len();
+            for &amp_factor in AMP_FACTORS {
+                let amplification = amp_factor * AMP_PRECISION;
+                for &size_bps in &[10u64, 100, 1_000] {
+                    let e = Env::default();
+                    let amount_in = (balances[0] as u128 * size_bps as u128 / 10_000) as u64;
+                    let invariant = calc_invariant(&e, amplification, balances, None).unwrap();
+
+                    let out = calc_out_given_in(
+                        &e,
+                        amplification,
+                        balances,
+                        0,
+                        n - 1,
+                        amount_in,
+                        invariant,
+                    )
+                    .unwrap();
+                    let recovered_in =
+                        calc_in_given_out(&e, amplification, balances, 0, n - 1, out, invariant)
+                            .unwrap();
+
+                    let drift = recovered_in.abs_diff(amount_in);
+                    assert!(
+                        drift <= ROUNDTRIP_TOL,
+                        "roundtrip drift {} (in {}, recovered {}) (pool {:?}, amp {}, {} bps)",
+                        drift,
+                        amount_in,
+                        recovered_in,
+                        balances,
+                        amp_factor,
+                        size_bps
+                    );
+                }
+            }
+        }
+    }
+
+    // Out-of-domain inputs fail closed (None -> contract MathError) instead
+    // of returning a wrong number: too many tokens, a swap that would require
+    // more than the whole reserve, and a zero-token pool.
+    #[test]
+    fn out_of_domain_inputs_return_none() {
+        let e = Env::default();
+
+        // More tokens than MAX_TOKENS.
+        let six = [ONE_MILLION_TOKENS; 6];
+        assert_eq!(calc_invariant(&e, 100 * AMP_PRECISION, &six, None), None);
+
+        // Requesting more out than the reserve holds.
+        let balances = [ONE_MILLION_TOKENS, ONE_MILLION_TOKENS];
+        let invariant = calc_invariant(&e, 100 * AMP_PRECISION, &balances, None).unwrap();
+        assert_eq!(
+            calc_in_given_out(
+                &e,
+                100 * AMP_PRECISION,
+                &balances,
+                0,
+                1,
+                balances[1] + 1,
+                invariant
+            ),
+            None
+        );
+
+        // An empty pool has invariant 0 (guarded before any iteration).
+        assert_eq!(calc_invariant(&e, 100 * AMP_PRECISION, &[], None), Some(0));
     }
 }

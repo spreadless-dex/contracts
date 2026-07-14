@@ -10,6 +10,8 @@
 mod arithmetic;
 pub(crate) mod fixed_math;
 mod lp_exit;
+#[cfg(test)]
+mod proptests;
 mod stable;
 
 pub(crate) use lp_exit::{proportional_amounts_out, single_token_amount_out};
