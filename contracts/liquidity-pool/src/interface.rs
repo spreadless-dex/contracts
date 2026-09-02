@@ -6,7 +6,7 @@
 //!
 //! The constructor is separate (constructors can't be trait methods), exposed as
 //! the inherent `__constructor(owner, tokens, amp_factor, swap_fee, protocol_fee,
-//! beneficiary, max_caps, lp_max_supply)`.
+//! beneficiary, max_caps, lp_max_supply, lp_name, lp_symbol)`.
 //!
 //! ## Conventions
 //! - **Amounts** are in each token's own raw on-chain units (`i128`, must be

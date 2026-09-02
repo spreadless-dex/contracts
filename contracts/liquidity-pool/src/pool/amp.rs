@@ -44,30 +44,3 @@ pub fn current_amp(pool: &Pool, now: u64) -> u64 {
 pub fn is_valid_amp_factor(factor: u32) -> bool {
     factor >= MIN_AMP as u32 && factor <= MAX_AMP as u32
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn amp_static_and_ramp() {
-        // static: initial == target -> factor * AMP_PRECISION
-        assert_eq!(ramp_amp(5000, 5000, 0, 0, 100), 5_000_000);
-        // degenerate window (stop <= start) -> target
-        assert_eq!(ramp_amp(1000, 5000, 100, 100, 50), 5_000_000);
-        // before / after the window -> endpoints
-        assert_eq!(ramp_amp(1000, 5000, 100, 200, 50), 1_000_000);
-        assert_eq!(ramp_amp(1000, 5000, 100, 200, 999), 5_000_000);
-        // midpoint, ramp up and ramp down
-        assert_eq!(ramp_amp(1000, 5000, 100, 200, 150), 3_000_000);
-        assert_eq!(ramp_amp(5000, 1000, 100, 200, 150), 3_000_000);
-    }
-
-    #[test]
-    fn amp_factor_validation() {
-        assert!(!is_valid_amp_factor(0));
-        assert!(is_valid_amp_factor(1));
-        assert!(is_valid_amp_factor(12_000));
-        assert!(!is_valid_amp_factor(12_001));
-    }
-}

@@ -1,17 +1,3 @@
-//! The contract itself: the `LiquidityPool` type, its AMM operations (init,
-//! deposit, withdraw, and swaps later), and its LP-share token impls.
-//!
-//! The operations are a thin orchestration layer — every formula lives in
-//! `math`, and the `i128 <-> u64` scaling and storage live in `pool`. The struct
-//! and ALL `#[contractimpl]` blocks are kept in this one module on purpose:
-//! `#[contractimpl(contracttrait)]` generates client methods on the
-//! macro-generated `LiquidityPoolClient`, and rust-analyzer only resolves those
-//! when they share a module with `#[contract]`.
-
-// The entrypoints are `LiquidityPoolInterface` trait-impl methods (not `pub`),
-// exported via the macro for wasm + tests but unreachable in a plain host
-// `cargo build` — which makes their private helpers (e.g. `commit_swap`) look
-// dead. Silence that here; the wasm + test builds are warning-clean.
 #![allow(dead_code, clippy::too_many_arguments)]
 
 use soroban_sdk::{
@@ -28,7 +14,6 @@ use crate::interface::LiquidityPoolInterface;
 use crate::math::{AMP_PRECISION, MAX_TOKENS, MIN_TOKENS};
 use crate::pool::{self, Pool, PoolToken};
 
-// Metadata that is added on to the WASM custom section
 contractmeta!(
     key = "Description",
     val = "Multi-asset StableSwap AMM; the pool is its own LP token"
@@ -111,6 +96,8 @@ impl LiquidityPool {
         beneficiary: Address,
         max_caps: Vec<i128>,
         lp_max_supply: i128,
+        lp_name: String,
+        lp_symbol: String,
     ) {
         let n = tokens.len();
         if (n as usize) < MIN_TOKENS || (n as usize) > MAX_TOKENS {
@@ -174,28 +161,11 @@ impl LiquidityPool {
 
         // The pool contract is itself the SEP-41 LP-share token. LP shares use
         // the internal 9-decimal scale (the invariant D scale).
-        Base::set_metadata(
-            &e,
-            pool::INTERNAL_DECIMALS,
-            String::from_str(&e, "Spreadless LP"),
-            String::from_str(&e, "SLP"),
-        );
+        Base::set_metadata(&e, pool::INTERNAL_DECIMALS, lp_name, lp_symbol);
         capped::set_cap(&e, lp_max_supply);
     }
 }
 
-// All other entrypoints are the `LiquidityPoolInterface` (see `interface.rs`);
-// implementing it here makes any signature drift a compile error.
-//
-// Reentrancy: the mutating ops below read pool state, make external token
-// transfers, then write the updated state back at the end. That read-then-write-
-// around-external-calls shape would be a cross-function reentrancy hazard (a
-// re-entered call's state write could be clobbered) on a platform that allowed
-// reentrancy — but Soroban disallows contract reentrancy at the host level, so a
-// pool token that tried to call back in during a transfer would simply trap.
-// This contract therefore relies on that host guarantee (and on pool tokens
-// being well-behaved SEP-41/SAC contracts, fixed at construction); it does not
-// add a separate reentrancy guard.
 #[contractimpl(contracttrait)]
 impl LiquidityPoolInterface for LiquidityPool {
     #[when_not_paused]
@@ -250,20 +220,21 @@ impl LiquidityPoolInterface for LiquidityPool {
 
         // Pull tokens in and credit reserves (enforcing per-token caps).
         let contract = e.current_contract_address();
-        let mut i = 0u32;
-        while i < n {
+        for i in 0..n {
             let amt_int = amounts_int.get(i as usize).unwrap();
-            if amt_int > 0 {
-                let mut t = pool.tokens.get(i).unwrap();
-                // For >9-dec tokens this is the input truncated to 9-dec
-                // precision, so no sub-precision dust is stranded in the pool.
-                let transfer_in = t.to_raw(amt_int);
-                let received_int = transfer_in_exact(&e, &t, &to, &contract, transfer_in);
-                t.credit(received_int)
-                    .unwrap_or_else(|| panic_with_error!(&e, Error::CapExceeded));
-                pool.tokens.set(i, t);
+
+            if amt_int == 0 {
+                continue;
             }
-            i += 1;
+
+            let mut t = pool.tokens.get(i).unwrap();
+            // For >9-dec tokens this is the input truncated to 9-dec
+            // precision, so no sub-precision dust is stranded in the pool.
+            let transfer_in = t.to_raw(amt_int);
+            let received_int = transfer_in_exact(&e, &t, &to, &contract, transfer_in);
+            t.credit(received_int)
+                .unwrap_or_else(|| panic_with_error!(&e, Error::CapExceeded));
+            pool.tokens.set(i, t);
         }
 
         Base::mint(&e, &to, lp_out as i128);

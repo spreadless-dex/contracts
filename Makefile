@@ -36,11 +36,14 @@ RUST_VERSION   ?= 1.92.0
 TARGET_TRIPLE  ?= wasm32v1-none
 
 WASM_NAME      := liquidity_pool
+POOL_FACTORY_WASM_NAME := pool_factory
 TEST_TOKEN_WASM_NAME := test_token
 RELEASE_DIR    := target/$(TARGET_TRIPLE)/release
 WASM           := $(RELEASE_DIR)/$(WASM_NAME).wasm
+POOL_FACTORY_WASM := $(RELEASE_DIR)/$(POOL_FACTORY_WASM_NAME).wasm
 TEST_TOKEN_WASM := $(RELEASE_DIR)/$(TEST_TOKEN_WASM_NAME).wasm
 BINDINGS_DIR   ?= bindings/liquidity-pool
+POOL_FACTORY_BINDINGS_DIR ?= bindings/pool-factory
 
 # --- constructor arguments for `make deploy` (2-token template) ---
 # OWNER/TOKEN_A/TOKEN_B are required; TOKEN_A and TOKEN_B must be SEP-41/SAC
@@ -54,63 +57,83 @@ SWAP_FEE       ?= 100000                  # 0.01%  (1e9 == 100%)
 PROTOCOL_FEE   ?= 0                        # cut of the swap fee (1e9 == 100%)
 MAX_CAP        ?= 10000000000000000        # 1e16 raw, per token
 LP_MAX_SUPPLY  ?= 1000000000000000000      # 1e18
+LP_NAME        ?= Spreadless LP
+LP_SYMBOL      ?= SLP
 
 .DEFAULT_GOAL := build
-.PHONY: all build build-test-token bindings test optimize optimize-test-token deploy deploy-testnet testnet-evidence setup keys fund clean fmt fmt-check lint help
+.PHONY: all build build-pool-factory build-test-token bindings bindings-liquidity-pool bindings-pool-factory test test-factory-integration optimize optimize-pool-factory optimize-test-token deploy deploy-testnet testnet-evidence setup keys fund clean fmt fmt-check lint help
 
 ## all: build then test
 all: build test
 
-## build: compile the contract to wasm (pinned toolchain via stellar CLI)
+## build: compile the pool and factory contracts to wasm
 build:
 	rustup run $(RUST_VERSION) $(STELLAR) contract build --package liquidity-pool
 	@echo "built: $(WASM)"
+	$(MAKE) build-pool-factory
+
+## build-pool-factory: compile the standalone pool factory contract to wasm
+build-pool-factory:
+	rustup run $(RUST_VERSION) $(STELLAR) contract build --package pool-factory
+	@echo "built: $(POOL_FACTORY_WASM)"
 
 ## build-test-token: compile the open-mint test token to wasm
 build-test-token:
 	rustup run $(RUST_VERSION) $(STELLAR) contract build --package test-token
 	@echo "built: $(TEST_TOKEN_WASM)"
 
-## bindings: generate TypeScript contract bindings from the built wasm
-bindings: build
+## bindings: generate TypeScript bindings for the pool and factory
+bindings: bindings-liquidity-pool bindings-pool-factory
+
+bindings-liquidity-pool: build
 	$(STELLAR) contract bindings typescript \
 		--wasm $(WASM) \
 		--output-dir $(BINDINGS_DIR) \
 		--overwrite
 	@echo "bindings: $(BINDINGS_DIR)"
 
+bindings-pool-factory: build-pool-factory
+	$(STELLAR) contract bindings typescript \
+		--wasm $(POOL_FACTORY_WASM) \
+		--output-dir $(POOL_FACTORY_BINDINGS_DIR) \
+		--overwrite
+	@echo "bindings: $(POOL_FACTORY_BINDINGS_DIR)"
+
 ## test: run the unit + integration test suite (native)
 test:
 	cargo test
+	$(MAKE) test-factory-integration
 
-## optimize: build the contract with wasm optimization -> $(WASM)
+## test-factory-integration: deploy the real pool WASM through the factory in Env
+test-factory-integration: build
+	cargo test -p pool-factory --features integration-tests
+
+## optimize: build optimized pool and factory WASM files
 optimize:
 	rustup run $(RUST_VERSION) $(STELLAR) contract build --package liquidity-pool --optimize
 	@echo "optimized: $(WASM)"
+	$(MAKE) optimize-pool-factory
+
+## optimize-pool-factory: build optimized factory WASM
+optimize-pool-factory:
+	rustup run $(RUST_VERSION) $(STELLAR) contract build --package pool-factory --optimize
+	@echo "optimized: $(POOL_FACTORY_WASM)"
 
 ## optimize-test-token: compile and optimize the open-mint test token
 optimize-test-token:
 	rustup run $(RUST_VERSION) $(STELLAR) contract build --package test-token --optimize
 	@echo "optimized: $(TEST_TOKEN_WASM)"
 
-## deploy: deploy + run the constructor (set OWNER, TOKEN_A, TOKEN_B)
+## deploy: deploy a factory and create a 2-token pool (set OWNER, TOKEN_A, TOKEN_B)
 deploy: optimize
 	@test -n "$(OWNER)"   || { echo "ERROR: set OWNER=<G... or C... address>";   exit 1; }
 	@test -n "$(TOKEN_A)" || { echo "ERROR: set TOKEN_A=<token contract address>"; exit 1; }
 	@test -n "$(TOKEN_B)" || { echo "ERROR: set TOKEN_B=<token contract address>"; exit 1; }
-	$(STELLAR) contract deploy \
-		--wasm $(WASM) \
-		--source $(SOURCE) \
-		--network $(NETWORK) \
-		-- \
-		--owner $(OWNER) \
-		--tokens '["$(TOKEN_A)","$(TOKEN_B)"]' \
-		--amp_factor $(AMP_FACTOR) \
-		--swap_fee $(SWAP_FEE) \
-		--protocol_fee $(PROTOCOL_FEE) \
-		--beneficiary $(BENEFICIARY) \
-		--max_caps '[$(MAX_CAP),$(MAX_CAP)]' \
-		--lp_max_supply $(LP_MAX_SUPPLY)
+	@pool_hash=`$(STELLAR) contract upload --wasm $(WASM) --source $(SOURCE) --network $(NETWORK)`; \
+	factory=`$(STELLAR) contract deploy --wasm $(POOL_FACTORY_WASM) --source $(SOURCE) --network $(NETWORK) -- --owner $(OWNER) --pool_wasm_hash $$pool_hash`; \
+	pool=`$(STELLAR) contract invoke --id $$factory --source $(SOURCE) --network $(NETWORK) -- create_pool --creator $(OWNER) --tokens '["$(TOKEN_A)","$(TOKEN_B)"]' --amp_factor $(AMP_FACTOR) --swap_fee $(SWAP_FEE) --protocol_fee $(PROTOCOL_FEE) --beneficiary $(BENEFICIARY) --max_caps '[$(MAX_CAP),$(MAX_CAP)]' --lp_max_supply $(LP_MAX_SUPPLY) --lp_name '$(LP_NAME)' --lp_symbol '$(LP_SYMBOL)' | tr -d '"'`; \
+	echo "factory: $$factory"; \
+	echo "pool: $$pool"
 
 ## deploy-testnet: deploy testnet open-mint tokens and a pool; save addresses
 deploy-testnet:

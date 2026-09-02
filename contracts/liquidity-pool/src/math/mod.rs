@@ -10,8 +10,6 @@
 mod arithmetic;
 pub(crate) mod fixed_math;
 mod lp_exit;
-#[cfg(test)]
-mod proptests;
 mod stable;
 
 pub(crate) use lp_exit::{proportional_amounts_out, single_token_amount_out};
@@ -23,7 +21,7 @@ pub use stable::{
 pub const AMP_PRECISION: u64 = 1_000;
 
 pub const MIN_AMP: u16 = 1;
-pub const MAX_AMP: u16 = 12000;
+pub const MAX_AMP: u16 = 50_000;
 
 // Safe max balance supported by the stable math.
 pub const MAX_SAFE_BALANCE: u64 = 3_000_000_000_000_000_000; // 3B

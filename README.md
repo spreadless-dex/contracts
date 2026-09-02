@@ -4,6 +4,11 @@ Spreadless is a Soroban liquidity-pool contract for swapping between correlated
 assets with low slippage. It supports 2 or more tokens, mints its own SEP-41 LP
 share token, and keeps pool accounting in one contract.
 
+The standalone pool-factory contract permissionlessly deploys pools from a
+governance-selected liquidity-pool WASM hash and keeps an indexed on-chain
+registry of every pool it creates. The authenticated creator owns the new pool;
+identical token baskets are intentionally allowed.
+
 The contract is implemented in Rust with `soroban-sdk` 26 and OpenZeppelin
 Stellar helpers for ownership, pause control, and token behavior.
 
@@ -125,6 +130,8 @@ Constructor arguments:
 - `beneficiary`: address that receives the protocol-fee share.
 - `max_caps`: per-token reserve caps in raw token units.
 - `lp_max_supply`: cap on total LP share supply.
+- `lp_name`: SEP-41 name for the pool's LP-share token.
+- `lp_symbol`: SEP-41 symbol (ticker) for the pool's LP-share token.
 
 All amount vectors use the pool token order returned by `get_tokens()`.
 
@@ -133,13 +140,14 @@ All amount vectors use the pool token order returned by `get_tokens()`.
 ```text
 .
 ├── contracts
-│   └── liquidity-pool
+│   ├── liquidity-pool
 │       ├── src
 │       │   ├── contract.rs     # entrypoints, transfer checks, LP token impl
 │       │   ├── interface.rs    # public interface documentation
 │       │   ├── math            # invariant, swap, deposit, withdraw math
 │       │   └── pool            # state, scaling, fees, quotes, amp ramps
 │       └── Cargo.toml
+│   └── pool-factory           # permissionless deployer + pool registry
 ├── docs
 │   ├── provenance.md           # translated vs adapted vs new, vs upstream
 │   └── testnet-swap-evidence.md# recorded testnet swaps with slippage data
@@ -156,7 +164,7 @@ Install the pinned Rust toolchain and Soroban wasm target:
 make setup
 ```
 
-Build the contract:
+Build both contracts:
 
 ```sh
 make build
@@ -181,7 +189,7 @@ make fmt-check
 make lint
 ```
 
-Build an optimized wasm:
+Build optimized pool and factory WASM files:
 
 ```sh
 make optimize
@@ -195,8 +203,9 @@ make deploy-testnet SOURCE=<stellar-identity>
 
 ## Deploy
 
-The Makefile includes a 2-token deployment template. `TOKEN_A` and `TOKEN_B`
-must be SEP-41-compatible token contract addresses in strictly ascending order.
+The Makefile includes a 2-token deployment template. It uploads the pool WASM,
+deploys a factory, then creates the pool through that factory. `TOKEN_A` and
+`TOKEN_B` must be SEP-41-compatible token addresses in strictly ascending order.
 
 ```sh
 make deploy \
@@ -206,7 +215,9 @@ make deploy \
   BENEFICIARY=<fee-beneficiary> \
   AMP_FACTOR=100 \
   SWAP_FEE=100000 \
-  PROTOCOL_FEE=0
+  PROTOCOL_FEE=0 \
+  LP_NAME='USD Stable LP' \
+  LP_SYMBOL=usdSLP
 ```
 
 Useful deployment variables:
@@ -215,7 +226,14 @@ Useful deployment variables:
 - `SOURCE`: Stellar CLI key name used to deploy. Defaults to `default`.
 - `MAX_CAP`: per-token cap used by the template.
 - `LP_MAX_SUPPLY`: total LP-share supply cap.
+- `LP_NAME` / `LP_SYMBOL`: pool-specific SEP-41 metadata.
 - `STELLAR`: CLI binary. Set to `soroban` if using an older install.
+
+Factory registry views are `pool_count()`, `pool_at(index)`, and
+`is_pool(address)`. The registry stores no fee, amplification, beneficiary, or
+other mutable pool configuration; query the pool for current state. The factory
+owner may update `pool_wasm_hash` for future creations, while existing pools are
+unchanged. Pool creation does not seed liquidity.
 
 Create and fund a deployment identity for the configured network:
 
@@ -230,7 +248,8 @@ For demo and integration testing, `make deploy-testnet` deploys:
 - `sUSDC`: an uncapped SEP-41 test token with open `mint(to, amount)`.
 - `sUSDT`: an uncapped SEP-41 test token with open `mint(to, amount)`.
 - `sDAI`: an uncapped SEP-41 test token with open `mint(to, amount)`.
-- A liquidity pool initialized with those three token addresses.
+- A pool factory configured with the uploaded liquidity-pool WASM hash.
+- A liquidity pool created through that factory with the three token addresses.
 
 The script mints an initial balance of each token to the deployer, seeds the
 first pool deposit, and writes the resulting contract addresses to

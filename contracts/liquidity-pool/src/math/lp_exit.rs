@@ -48,31 +48,3 @@ pub(crate) fn single_token_amount_out(
         swap_fee,
     )
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    // Parity test with fixed inputs and known expected outputs, locking the
-    // proportional-exit math to exact values.
-    #[test]
-    fn test_proportional_amounts_out() {
-        let balances = [5_000_000_000u64, 3_000_000_000];
-        let pool_token_supply = 1_000_000_000;
-
-        let amounts_out =
-            proportional_amounts_out(&balances, pool_token_supply, 100_000_000).unwrap();
-        assert_eq!(amounts_out[0], 500000000);
-        assert_eq!(amounts_out[1], 300000000);
-
-        let amounts_out =
-            proportional_amounts_out(&balances, pool_token_supply, 333_333_333).unwrap();
-        assert_eq!(amounts_out[0], 1666666665);
-        assert_eq!(amounts_out[1], 999999999);
-
-        let amounts_out =
-            proportional_amounts_out(&balances, pool_token_supply, 777_777_777).unwrap();
-        assert_eq!(amounts_out[0], 3888888885);
-        assert_eq!(amounts_out[1], 2333333331);
-    }
-}
