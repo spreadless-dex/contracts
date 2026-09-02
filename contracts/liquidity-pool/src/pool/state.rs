@@ -19,6 +19,15 @@ pub enum DataKey {
     Pool,
 }
 
+/// Determines whether the pool's amplification factor is permanently fixed or
+/// delegated to the immutable protocol controller.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[contracttype]
+pub enum AmpControl {
+    Locked,
+    ProtocolManaged,
+}
+
 /// One token in the pool. `reserve` and `max_cap` are stored already normalized
 /// to `INTERNAL_DECIMALS` (9). `scaling_factor`/`scaling_up` describe how to
 /// convert this token's raw on-chain amounts to/from that internal scale.
@@ -37,6 +46,8 @@ pub struct PoolToken {
 #[contracttype]
 pub struct Pool {
     pub tokens: Vec<PoolToken>, // 2..=MAX_TOKENS, in canonical (sorted) order
+    pub protocol_controller: Address,
+    pub amp_control: AmpControl,
     pub amp_initial_factor: u32,
     pub amp_target_factor: u32,
     pub ramp_start_ts: u64,

@@ -34,4 +34,8 @@ pub enum Error {
 
     // --- LP shares ---
     DirectLpBurnDisabled = 20, // LP exits must use pool exit methods so reserves are updated
+
+    // --- authority ---
+    AmpControlLocked = 21, // amplification was permanently locked at creation
+    OwnershipRenunciationDisabled = 22, // ownership must always be transferred, never removed
 }

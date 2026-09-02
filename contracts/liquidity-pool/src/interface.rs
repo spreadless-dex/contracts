@@ -5,8 +5,9 @@
 //! `LiquidityPoolClient` used by callers and tests.
 //!
 //! The constructor is separate (constructors can't be trait methods), exposed as
-//! the inherent `__constructor(owner, tokens, amp_factor, swap_fee, protocol_fee,
-//! beneficiary, max_caps, lp_max_supply, lp_name, lp_symbol)`.
+//! the inherent `__constructor(owner, protocol_controller, tokens, amp_factor,
+//! amp_control, swap_fee, protocol_fee, beneficiary, max_caps, lp_max_supply,
+//! lp_name, lp_symbol)`.
 //!
 //! ## Conventions
 //! - **Amounts** are in each token's own raw on-chain units (`i128`, must be
@@ -21,21 +22,24 @@
 //!   withdrawals, and as freshly minted LP shares for deposits (a join has no
 //!   single output token). The rest of each fee stays in the pool for LPs;
 //!   proportional withdrawals are fee-free.
-//! - **Amplification** is an integer factor `A` in `[1, 12000]`.
+//! - **Amplification** is an integer factor `A` in `[1, 50000]`. Its control is
+//!   irreversibly either locked or delegated to the protocol controller.
 //! - **LP shares** are the pool contract's own SEP-41 token (9 decimals).
 //! - **Token order / indices**: `tokens` is sorted ascending at init; reserves,
 //!   `amounts_in`, and `min_amounts_out` are all in that order.
-//! - Failures revert with a typed `Error` (codes 1..=20, see `error.rs`);
+//! - Failures revert with a typed `Error` (codes 1..=22, see `error.rs`);
 //!   missing authorization reverts with a host auth error.
 
 #![allow(dead_code)] // trait methods aren't "used" on a plain host build
 
 use soroban_sdk::{contracttrait, Address, Env, Vec};
 
+use crate::pool::AmpControl;
+
 /// The contract's entrypoints; see the module docs for conventions.
 #[contracttrait]
 pub trait LiquidityPoolInterface {
-    // --- liquidity (require `to`'s auth; blocked while paused) ---
+    // --- liquidity (require `to`'s auth; deposits are blocked while paused) ---
 
     /// Add liquidity with an exact `amounts_in` (one per token, in token order)
     /// and mint LP shares to `to`. Returns the LP shares minted.
@@ -129,19 +133,29 @@ pub trait LiquidityPoolInterface {
     /// Current amplification factor `A`, reflecting any ramp in progress.
     fn get_amp(e: Env) -> u32;
 
-    /// Whether the pool is paused (deposit/withdraw/swap blocked).
+    /// Immutable address authorized to perform protocol administration.
+    fn get_protocol_controller(e: Env) -> Address;
+
+    /// Immutable amplification-control mode selected at pool creation.
+    fn get_amp_control(e: Env) -> AmpControl;
+
+    fn get_swap_fee(e: Env) -> u64;
+
+    fn get_protocol_fee(e: Env) -> u64;
+
+    fn get_beneficiary(e: Env) -> Address;
+
+    fn get_max_supply(e: Env) -> i128;
+
+    /// Whether the pool is paused (deposits and swaps blocked; exits remain open).
     fn paused(e: Env) -> bool;
 
-    // --- admin (ALL require the OWNER's auth) ---
+    // --- protocol administration (requires protocol-controller auth) ---
 
-    /// Start/replace a linear amp ramp toward `target_factor` (in `[1,12000]`)
-    /// over `duration` seconds, starting from the current factor (no jump);
-    /// `duration == 0` applies it at once. Reverts: `InvalidAmpFactor`.
+    /// Start/replace a linear amp ramp toward `target_factor` (in `[1,50000]`)
+    /// on a protocol-managed pool. `duration == 0` applies it at once.
+    /// Reverts: `InvalidAmpFactor`, `AmpControlLocked`.
     fn set_amp_ramp(e: Env, target_factor: u32, duration: u64);
-
-    /// Set the swap fee (1e9 == 100%, in `[10_000, 10_000_000]`).
-    /// Reverts: `InvalidSwapFee`.
-    fn set_swap_fee(e: Env, swap_fee: u64);
 
     /// Set the protocol's cut of the swap fee (in `[0, 1e9]`).
     /// Reverts: `InvalidProtocolFee`.
@@ -150,6 +164,19 @@ pub trait LiquidityPoolInterface {
     /// Set the address that receives the protocol fee.
     fn set_beneficiary(e: Env, beneficiary: Address);
 
+    /// Protocol-controller pause path. Uses the same shared pause flag as the
+    /// owner path.
+    fn protocol_pause(e: Env);
+
+    /// Protocol-controller unpause path.
+    fn protocol_unpause(e: Env);
+
+    // --- pool-owner administration ---
+
+    /// Set the swap fee (1e9 == 100%, in `[10_000, 10_000_000]`).
+    /// Reverts: `InvalidSwapFee`.
+    fn set_swap_fee(e: Env, swap_fee: u64);
+
     /// Set the cap on total LP-share supply.
     fn set_max_supply(e: Env, max_supply: i128);
 
@@ -157,7 +184,7 @@ pub trait LiquidityPoolInterface {
     /// Reverts: `UnknownToken`, `InvalidCap`.
     fn set_token_cap(e: Env, token: Address, max_cap: i128);
 
-    /// Pause the pool (blocks deposit/withdraw/swap).
+    /// Pause the pool (blocks deposits and swaps, but never withdrawals).
     fn pause(e: Env);
 
     /// Resume a paused pool.
@@ -172,7 +199,7 @@ pub trait LiquidityPoolInterface {
 //   get_owner(e) -> Option<Address>
 //   transfer_ownership(e, new_owner: Address, live_until_ledger: u32)  // owner auth
 //   accept_ownership(e)                                                // pending-owner auth
-//   renounce_ownership(e)                                              // owner auth
+//   renounce_ownership(e)                                              // always reverts
 //
 // SEP-41 LP-share token — the pool IS its own token, 9 decimals
 // (stellar_tokens::fungible::{FungibleToken, FungibleBurnable}):

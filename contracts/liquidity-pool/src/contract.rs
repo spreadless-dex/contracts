@@ -81,6 +81,7 @@ impl LiquidityPool {
     ///
     /// * `tokens` must be 2..=MAX_TOKENS distinct addresses in strictly
     ///   ascending order (canonical, dedup-free).
+    /// * `protocol_controller` and `amp_control` are immutable.
     /// * `amp_factor` is the amplification *factor* (effective A); the ramp
     ///   starts static (initial == target).
     /// * `swap_fee` / `protocol_fee` use 1e9 == 100%.
@@ -89,8 +90,10 @@ impl LiquidityPool {
     pub fn __constructor(
         e: Env,
         owner: Address,
+        protocol_controller: Address,
         tokens: Vec<Address>,
         amp_factor: u32,
+        amp_control: pool::AmpControl,
         swap_fee: u64,
         protocol_fee: u64,
         beneficiary: Address,
@@ -146,6 +149,8 @@ impl LiquidityPool {
 
         let pool = Pool {
             tokens: pool_tokens,
+            protocol_controller,
+            amp_control,
             amp_initial_factor: amp_factor,
             amp_target_factor: amp_factor,
             ramp_start_ts: 0,
@@ -258,7 +263,6 @@ impl LiquidityPoolInterface for LiquidityPool {
 
     /// Burn `lp_amount` shares and withdraw a proportional slice of every
     /// reserve. Returns the raw amounts paid out, in token order.
-    #[when_not_paused]
     fn withdraw(e: Env, to: Address, lp_amount: i128, min_amounts_out: Vec<i128>) -> Vec<i128> {
         to.require_auth();
 
@@ -321,7 +325,6 @@ impl LiquidityPoolInterface for LiquidityPool {
     /// lowers the stable invariant, and the selected token pays swap fees on the
     /// imbalanced portion of the exit. The protocol's cut of that fee is paid to
     /// the beneficiary in `token_out`; the rest stays in the pool for LPs.
-    #[when_not_paused]
     fn withdraw_one_token(
         e: Env,
         to: Address,
@@ -547,18 +550,43 @@ impl LiquidityPoolInterface for LiquidityPool {
         (pool::current_amp(&pool, e.ledger().timestamp()) / AMP_PRECISION) as u32
     }
 
-    // --- admin (owner-gated via `#[only_owner]`; ownership itself is managed by
-    //     the `Ownable` impl below) ---
+    fn get_protocol_controller(e: Env) -> Address {
+        pool::read_pool(&e).protocol_controller
+    }
+
+    fn get_amp_control(e: Env) -> pool::AmpControl {
+        pool::read_pool(&e).amp_control
+    }
+
+    fn get_swap_fee(e: Env) -> u64 {
+        pool::read_pool(&e).swap_fee
+    }
+
+    fn get_protocol_fee(e: Env) -> u64 {
+        pool::read_pool(&e).protocol_fee
+    }
+
+    fn get_beneficiary(e: Env) -> Address {
+        pool::read_pool(&e).beneficiary
+    }
+
+    fn get_max_supply(e: Env) -> i128 {
+        capped::query_cap(&e)
+    }
+
+    // --- protocol administration ---
 
     /// Start (or replace) a linear amplification ramp toward `target_factor`
     /// over `duration` seconds. The ramp begins from the current interpolated
     /// factor, so there is no discontinuity. `duration == 0` applies it at once.
-    #[only_owner]
     fn set_amp_ramp(e: Env, target_factor: u32, duration: u64) {
+        let mut pool = require_protocol_controller(&e);
+        if pool.amp_control == pool::AmpControl::Locked {
+            panic_with_error!(&e, Error::AmpControlLocked);
+        }
         if !pool::is_valid_amp_factor(target_factor) {
             panic_with_error!(&e, Error::InvalidAmpFactor);
         }
-        let mut pool = pool::read_pool(&e);
         let now = e.ledger().timestamp();
         // Re-seed the ramp from the current factor. Re-ramping mid-ramp floors
         // the in-progress interpolated factor to an integer, which can drop a
@@ -567,10 +595,45 @@ impl LiquidityPoolInterface for LiquidityPool {
         pool.amp_initial_factor = current_factor;
         pool.amp_target_factor = target_factor;
         pool.ramp_start_ts = now;
-        pool.ramp_stop_ts = now + duration;
+        pool.ramp_stop_ts = now
+            .checked_add(duration)
+            .unwrap_or_else(|| panic_with_error!(&e, Error::MathError));
         pool::write_pool(&e, &pool);
         pool::extend_instance_ttl(&e);
     }
+
+    /// Set the protocol's cut of the swap fee (1e9 == 100% of the swap fee).
+    fn set_protocol_fee(e: Env, protocol_fee: u64) {
+        let mut pool = require_protocol_controller(&e);
+        if !pool::is_valid_protocol_fee(protocol_fee) {
+            panic_with_error!(&e, Error::InvalidProtocolFee);
+        }
+        pool.protocol_fee = protocol_fee;
+        pool::write_pool(&e, &pool);
+        pool::extend_instance_ttl(&e);
+    }
+
+    /// Set the address that receives the protocol fee.
+    fn set_beneficiary(e: Env, beneficiary: Address) {
+        let mut pool = require_protocol_controller(&e);
+        pool.beneficiary = beneficiary;
+        pool::write_pool(&e, &pool);
+        pool::extend_instance_ttl(&e);
+    }
+
+    fn protocol_pause(e: Env) {
+        require_protocol_controller(&e);
+        pausable::pause(&e);
+        pool::extend_instance_ttl(&e);
+    }
+
+    fn protocol_unpause(e: Env) {
+        require_protocol_controller(&e);
+        pausable::unpause(&e);
+        pool::extend_instance_ttl(&e);
+    }
+
+    // --- pool-owner administration ---
 
     /// Set the swap fee (1e9 == 100%), within the configured fee range.
     #[only_owner]
@@ -580,27 +643,6 @@ impl LiquidityPoolInterface for LiquidityPool {
         }
         let mut pool = pool::read_pool(&e);
         pool.swap_fee = swap_fee;
-        pool::write_pool(&e, &pool);
-        pool::extend_instance_ttl(&e);
-    }
-
-    /// Set the protocol's cut of the swap fee (1e9 == 100% of the swap fee).
-    #[only_owner]
-    fn set_protocol_fee(e: Env, protocol_fee: u64) {
-        if !pool::is_valid_protocol_fee(protocol_fee) {
-            panic_with_error!(&e, Error::InvalidProtocolFee);
-        }
-        let mut pool = pool::read_pool(&e);
-        pool.protocol_fee = protocol_fee;
-        pool::write_pool(&e, &pool);
-        pool::extend_instance_ttl(&e);
-    }
-
-    /// Set the address that receives the protocol fee.
-    #[only_owner]
-    fn set_beneficiary(e: Env, beneficiary: Address) {
-        let mut pool = pool::read_pool(&e);
-        pool.beneficiary = beneficiary;
         pool::write_pool(&e, &pool);
         pool::extend_instance_ttl(&e);
     }
@@ -629,7 +671,7 @@ impl LiquidityPoolInterface for LiquidityPool {
         pool::extend_instance_ttl(&e);
     }
 
-    /// Pause the pool: blocks deposit/withdraw/swap until unpaused.
+    /// Pause deposits and swaps. Withdrawals remain available.
     #[only_owner]
     fn pause(e: Env) {
         pausable::pause(&e);
@@ -665,6 +707,14 @@ fn exit_supply(e: &Env) -> u64 {
         Ok(s) if s > 0 => s,
         _ => panic_with_error!(e, Error::MathError),
     }
+}
+
+/// Authenticate the immutable protocol controller and return the already-read
+/// pool state to callers that need to mutate it.
+fn require_protocol_controller(e: &Env) -> Pool {
+    let pool = pool::read_pool(e);
+    pool.protocol_controller.require_auth();
+    pool
 }
 
 /// Index of `token` within the pool, trapping with `UnknownToken` if absent.
@@ -811,8 +861,12 @@ impl FungibleBurnable for LiquidityPool {
     }
 }
 
-// 2-step ownership (get_owner, transfer_ownership, accept_ownership,
-// renounce_ownership). The constructor seeds the owner via `ownable::set_owner`;
-// these default impls are auth-enforced by OpenZeppelin.
+// 2-step ownership (get_owner, transfer_ownership, accept_ownership). The
+// constructor seeds the owner via `ownable::set_owner`; renunciation is
+// deliberately disabled so administration can only move to another address.
 #[contractimpl(contracttrait)]
-impl Ownable for LiquidityPool {}
+impl Ownable for LiquidityPool {
+    fn renounce_ownership(e: &Env) {
+        panic_with_error!(e, Error::OwnershipRenunciationDisabled);
+    }
+}

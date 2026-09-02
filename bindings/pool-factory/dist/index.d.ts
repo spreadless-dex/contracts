@@ -8,6 +8,22 @@ export declare const Errors: {
     1: {
         message: string;
     };
+    2: {
+        message: string;
+    };
+    3: {
+        message: string;
+    };
+    4: {
+        message: string;
+    };
+};
+export type AmpControl = {
+    tag: "Locked";
+    values: void;
+} | {
+    tag: "ProtocolManaged";
+    values: void;
 };
 export declare const RoleTransferError: {
     2200: {
@@ -36,16 +52,10 @@ export declare const OwnableError: {
 };
 export interface Client {
     /**
-     * Construct and simulate a is_pool transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
-     */
-    is_pool: ({ pool }: {
-        pool: string;
-    }, options?: MethodOptions) => Promise<AssembledTransaction<boolean>>;
-    /**
      * Construct and simulate a pool_at transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
      */
-    pool_at: ({ index }: {
-        index: u32;
+    pool_at: ({ id }: {
+        id: u32;
     }, options?: MethodOptions) => Promise<AssembledTransaction<Option<string>>>;
     /**
      * Construct and simulate a get_owner transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
@@ -58,24 +68,35 @@ export interface Client {
      */
     get_owner: (options?: MethodOptions) => Promise<AssembledTransaction<Option<string>>>;
     /**
-     * Construct and simulate a pool_count transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+     * Construct and simulate a pause_pool transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
      */
-    pool_count: (options?: MethodOptions) => Promise<AssembledTransaction<u32>>;
+    pause_pool: ({ pool_id }: {
+        pool_id: u32;
+    }, options?: MethodOptions) => Promise<AssembledTransaction<null>>;
     /**
      * Construct and simulate a create_pool transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
      */
-    create_pool: ({ creator, tokens, amp_factor, swap_fee, protocol_fee, beneficiary, max_caps, lp_max_supply, lp_name, lp_symbol }: {
+    create_pool: ({ creator, tokens, amp_factor, amp_control, swap_fee, max_caps, lp_max_supply, lp_name, lp_symbol }: {
         creator: string;
         tokens: Array<string>;
         amp_factor: u32;
+        amp_control: AmpControl;
         swap_fee: u64;
-        protocol_fee: u64;
-        beneficiary: string;
         max_caps: Array<i128>;
         lp_max_supply: i128;
         lp_name: string;
         lp_symbol: string;
     }, options?: MethodOptions) => Promise<AssembledTransaction<string>>;
+    /**
+     * Construct and simulate a next_pool_id transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+     */
+    next_pool_id: (options?: MethodOptions) => Promise<AssembledTransaction<u32>>;
+    /**
+     * Construct and simulate a unpause_pool transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+     */
+    unpause_pool: ({ pool_id }: {
+        pool_id: u32;
+    }, options?: MethodOptions) => Promise<AssembledTransaction<null>>;
     /**
      * Construct and simulate a accept_ownership transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
      * Accepts a pending ownership transfer.
@@ -96,29 +117,19 @@ export interface Client {
      */
     accept_ownership: (options?: MethodOptions) => Promise<AssembledTransaction<null>>;
     /**
+     * Construct and simulate a set_pool_amp_ramp transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+     */
+    set_pool_amp_ramp: ({ pool_id, target_factor, duration }: {
+        pool_id: u32;
+        target_factor: u32;
+        duration: u64;
+    }, options?: MethodOptions) => Promise<AssembledTransaction<null>>;
+    /**
      * Construct and simulate a get_pool_wasm_hash transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
      */
     get_pool_wasm_hash: (options?: MethodOptions) => Promise<AssembledTransaction<Buffer>>;
     /**
      * Construct and simulate a renounce_ownership transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
-     * Renounces ownership of the contract.
-     *
-     * Permanently removes the owner, disabling all functions gated by
-     * `#[only_owner]`.
-     *
-     * # Arguments
-     *
-     * * `e` - Access to the Soroban environment.
-     *
-     * # Errors
-     *
-     * * [`OwnableError::TransferInProgress`] - If there is a pending ownership
-     * transfer.
-     * * [`OwnableError::OwnerNotSet`] - If the owner is not set.
-     *
-     * # Notes
-     *
-     * * Authorization for the current owner is required.
      */
     renounce_ownership: (options?: MethodOptions) => Promise<AssembledTransaction<null>>;
     /**
@@ -160,15 +171,51 @@ export interface Client {
         new_owner: string;
         live_until_ledger: u32;
     }, options?: MethodOptions) => Promise<AssembledTransaction<null>>;
+    /**
+     * Construct and simulate a set_pool_beneficiary transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+     */
+    set_pool_beneficiary: ({ pool_id, new_beneficiary }: {
+        pool_id: u32;
+        new_beneficiary: string;
+    }, options?: MethodOptions) => Promise<AssembledTransaction<null>>;
+    /**
+     * Construct and simulate a set_pool_protocol_fee transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+     */
+    set_pool_protocol_fee: ({ pool_id, new_fee }: {
+        pool_id: u32;
+        new_fee: u64;
+    }, options?: MethodOptions) => Promise<AssembledTransaction<null>>;
+    /**
+     * Construct and simulate a get_default_protocol_fee transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+     */
+    get_default_protocol_fee: (options?: MethodOptions) => Promise<AssembledTransaction<u64>>;
+    /**
+     * Construct and simulate a set_default_protocol_fee transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+     */
+    set_default_protocol_fee: ({ new_fee }: {
+        new_fee: u64;
+    }, options?: MethodOptions) => Promise<AssembledTransaction<null>>;
+    /**
+     * Construct and simulate a get_default_protocol_beneficiary transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+     */
+    get_default_protocol_beneficiary: (options?: MethodOptions) => Promise<AssembledTransaction<string>>;
+    /**
+     * Construct and simulate a set_default_protocol_beneficiary transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+     */
+    set_default_protocol_beneficiary: ({ new_beneficiary }: {
+        new_beneficiary: string;
+    }, options?: MethodOptions) => Promise<AssembledTransaction<null>>;
 }
 export declare class Client extends ContractClient {
     readonly options: ContractClientOptions;
     static deploy<T = Client>(
     /** Constructor/Initialization Args for the contract's `__constructor` method */
-    { owner, pool_wasm_hash }: {
+    { owner, pool_wasm_hash, default_protocol_fee, default_protocol_beneficiary }: {
         owner: string;
         pool_wasm_hash: Buffer;
-    },
+        default_protocol_fee: u64;
+        default_protocol_beneficiary: string;
+    }, 
     /** Options for initializing a Client as well as for calling a method, with extras specific to deploying. */
     options: MethodOptions & Omit<ContractClientOptions, "contractId"> & {
         /** The hash of the Wasm blob, which must already be installed on-chain. */
@@ -180,15 +227,23 @@ export declare class Client extends ContractClient {
     }): Promise<AssembledTransaction<T>>;
     constructor(options: ContractClientOptions);
     readonly fromJSON: {
-        is_pool: (json: string) => AssembledTransaction<boolean>;
         pool_at: (json: string) => AssembledTransaction<Option<string>>;
         get_owner: (json: string) => AssembledTransaction<Option<string>>;
-        pool_count: (json: string) => AssembledTransaction<number>;
+        pause_pool: (json: string) => AssembledTransaction<null>;
         create_pool: (json: string) => AssembledTransaction<string>;
+        next_pool_id: (json: string) => AssembledTransaction<number>;
+        unpause_pool: (json: string) => AssembledTransaction<null>;
         accept_ownership: (json: string) => AssembledTransaction<null>;
+        set_pool_amp_ramp: (json: string) => AssembledTransaction<null>;
         get_pool_wasm_hash: (json: string) => AssembledTransaction<Buffer>;
         renounce_ownership: (json: string) => AssembledTransaction<null>;
         set_pool_wasm_hash: (json: string) => AssembledTransaction<null>;
         transfer_ownership: (json: string) => AssembledTransaction<null>;
+        set_pool_beneficiary: (json: string) => AssembledTransaction<null>;
+        set_pool_protocol_fee: (json: string) => AssembledTransaction<null>;
+        get_default_protocol_fee: (json: string) => AssembledTransaction<bigint>;
+        set_default_protocol_fee: (json: string) => AssembledTransaction<null>;
+        get_default_protocol_beneficiary: (json: string) => AssembledTransaction<string>;
+        set_default_protocol_beneficiary: (json: string) => AssembledTransaction<null>;
     };
 }

@@ -8,6 +8,10 @@ The SDK is a thin, fully-typed client generated from the deployed contract. It
 wraps every entrypoint (swaps, deposits, withdrawals, the SEP-41 LP token, and
 admin controls) in an `async` method and talks to the network over Soroban RPC.
 
+The current ABI separates pool-owner administration from protocol governance.
+Each pool permanently records its factory as protocol controller and chooses
+either locked or protocol-managed amplification at creation.
+
 - [Install](#install)
 - [Deployed contracts](#deployed-contracts)
 - [Quick start](#quick-start)
@@ -32,7 +36,9 @@ Requires Node 18+ (or any runtime with global `fetch` and `BigInt`).
 ## Deployed contracts
 
 The SDK does **not** bundle a `networks` constant — you pass the contract ID,
-network passphrase, and RPC URL yourself. The current **testnet** deployment:
+network passphrase, and RPC URL yourself. The checked-in **testnet** deployment
+below predates the protocol-controller ABI and is retained only as historical
+execution evidence; redeploy before using the new administrative methods.
 
 | What | Value |
 | --- | --- |
@@ -244,8 +250,14 @@ Inline JSDoc for each is available in your editor via `pool.` autocomplete.
 | `get_tokens()` | `string[]` | Pool token addresses, in canonical order. |
 | `get_reserves()` | `bigint[]` | Current reserves in raw units, token order. |
 | `get_amp()` | `number` | Effective amplification factor (reflects any ramp). |
-| `paused()` | `boolean` | Whether liquidity/swap ops are paused. |
-| `get_owner()` | `string \| undefined` | Owner address, or `undefined` if renounced. |
+| `get_amp_control()` | `AmpControl` | Immutable `Locked` or `ProtocolManaged` mode. |
+| `get_protocol_controller()` | `string` | Immutable factory controller address. |
+| `get_swap_fee()` | `bigint` | Current swap fee. |
+| `get_protocol_fee()` | `bigint` | Current protocol cut of the swap fee. |
+| `get_beneficiary()` | `string` | Current protocol-fee beneficiary. |
+| `get_max_supply()` | `bigint` | LP-token supply cap. |
+| `paused()` | `boolean` | Whether deposits and swaps are paused. |
+| `get_owner()` | `string \| undefined` | Current pool-owner address. |
 
 ### Swaps
 
@@ -270,22 +282,34 @@ semantics. Note: direct LP `burn` outside `withdraw*` keeps supply and reserves
 in sync only through the withdrawal paths — burning shares directly to reduce
 your position is disabled (`DirectLpBurnDisabled`, error 20).
 
-### Admin (owner only)
+Withdrawals remain available while the pool is paused.
+
+### Pool-owner administration
 
 | Method | Args |
 | --- | --- |
-| `set_amp_ramp` | `{ target_factor, duration }` — linear A ramp over `duration` seconds |
 | `set_swap_fee` | `{ swap_fee }` — `1_000_000_000` = 100% |
-| `set_protocol_fee` | `{ protocol_fee }` — cut of the swap fee routed to beneficiary |
-| `set_beneficiary` | `{ beneficiary }` |
 | `set_max_supply` | `{ max_supply }` — LP supply cap |
 | `set_token_cap` | `{ token, max_cap }` — per-token reserve cap, raw units |
 | `pause` / `unpause` | — |
 
+### Protocol-controller administration
+
+These methods authenticate the immutable factory controller and are normally
+reached through factory governance proxies.
+
+| Method | Args |
+| --- | --- |
+| `set_amp_ramp` | `{ target_factor, duration }` — only for `ProtocolManaged` pools |
+| `set_protocol_fee` | `{ protocol_fee }` — cut of the swap fee routed to beneficiary |
+| `set_beneficiary` | `{ beneficiary }` |
+| `protocol_pause` / `protocol_unpause` | — |
+
 ### Ownership (two-step)
 
 `transfer_ownership({ new_owner, live_until_ledger })` →
-`accept_ownership()` (called by the new owner) · `renounce_ownership()`.
+`accept_ownership()` (called by the new owner). `renounce_ownership()` is kept
+in the standard interface but always fails; ownership must be transferred.
 
 ## Error codes
 
@@ -307,6 +331,8 @@ pool-specific codes:
 | 18 | `SameToken` | `token_in == token_out`. |
 | 19 | `TransferAmountMismatch` | Token moved a different amount than expected (fee-on-transfer tokens are rejected). |
 | 20 | `DirectLpBurnDisabled` | LP shares can only exit via `withdraw*`. |
+| 21 | `AmpControlLocked` | A ramp was requested for a permanently locked pool. |
+| 22 | `OwnershipRenunciationDisabled` | Ownership must be transferred, not removed. |
 
 The full list, plus the `Errors`, `PausableError` (1000–1001), `OwnableError`
 (2100–2102), `RoleTransferError` (2200–2203), and `FungibleTokenError` (100–114)

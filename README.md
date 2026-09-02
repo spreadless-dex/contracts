@@ -5,9 +5,11 @@ assets with low slippage. It supports 2 or more tokens, mints its own SEP-41 LP
 share token, and keeps pool accounting in one contract.
 
 The standalone pool-factory contract permissionlessly deploys pools from a
-governance-selected liquidity-pool WASM hash and keeps an indexed on-chain
-registry of every pool it creates. The authenticated creator owns the new pool;
-identical token baskets are intentionally allowed.
+governance-selected liquidity-pool WASM hash and assigns each pool an on-chain
+ID. The authenticated creator owns the new pool; identical token baskets are
+intentionally allowed. The factory is also each
+pool's immutable protocol controller, while factory ownership determines who
+may exercise that authority.
 
 The contract is implemented in Rust with `soroban-sdk` 26 and OpenZeppelin
 Stellar helpers for ownership, pause control, and token behavior.
@@ -35,8 +37,10 @@ closely the pool behaves like a flat-price market around balance:
   sharper once the pool moves away from balance.
 - Lower `A` gives more conservative pricing and lets prices move sooner as
   reserves diverge.
-- The owner can ramp `A` linearly over time so parameter changes do not create
-  an instant price jump.
+- At creation the creator permanently chooses `Locked` amplification or
+  `ProtocolManaged` amplification. Locked amplification never changes;
+  protocol-managed amplification can be changed only through factory
+  governance, either immediately or with a linear ramp.
 
 LP shares are the pool contract's own SEP-41 token:
 
@@ -75,9 +79,10 @@ credited to reserves.
 - Balanced, imbalanced, and single-sided deposits.
 - Proportional and single-token withdrawals.
 - Output-fee accounting with optional protocol-fee beneficiary.
-- Time-based amplification ramps.
-- Owner-gated admin controls with two-step ownership.
-- Pause and unpause controls for liquidity and swap operations.
+- Locked or protocol-managed amplification.
+- Separate pool-owner and protocol-governance authority.
+- Non-renounceable, two-step ownership transfer.
+- Owner and protocol pause controls that keep withdrawals open.
 - SEP-41 LP token with transfers and allowances.
 
 ## Contract Entrypoints
@@ -98,31 +103,57 @@ Views:
 - `get_reserves() -> Vec<i128>`
 - `get_tokens() -> Vec<Address>`
 - `get_amp() -> u32`
+- `get_amp_control() -> AmpControl`
+- `get_protocol_controller() -> Address`
+- `get_swap_fee() -> u64`
+- `get_protocol_fee() -> u64`
+- `get_beneficiary() -> Address`
+- `get_max_supply() -> i128`
 - `paused() -> bool`
 
-Admin operations:
+Pool-owner operations:
 
-- `set_amp_ramp(target_factor, duration)`
 - `set_swap_fee(swap_fee)`
-- `set_protocol_fee(protocol_fee)`
-- `set_beneficiary(beneficiary)`
 - `set_max_supply(max_supply)`
 - `set_token_cap(token, max_cap)`
 - `pause()`
 - `unpause()`
 
-The pool also exposes OpenZeppelin ownership methods and SEP-41 LP-token
-methods such as `balance`, `total_supply`, `approve`, `transfer`, and
-`transfer_from`.
+Protocol-controller operations, normally invoked by factory governance:
+
+- `set_amp_ramp(target_factor, duration)`
+- `set_protocol_fee(protocol_fee)`
+- `set_beneficiary(beneficiary)`
+- `protocol_pause()`
+- `protocol_unpause()`
+
+The pool also exposes OpenZeppelin's two-step ownership methods and SEP-41
+LP-token methods such as `balance`, `total_supply`, `approve`, `transfer`, and
+`transfer_from`. Ownership renunciation always reverts; control must be
+transferred explicitly.
+
+Factory operations:
+
+- `create_pool(creator, tokens, amp_factor, amp_control, swap_fee, max_caps, lp_max_supply, lp_name, lp_symbol)`
+- `next_pool_id()` and `pool_at(id)`
+- `set_default_protocol_fee(new_fee)`
+- `set_default_protocol_beneficiary(new_beneficiary)`
+- `set_pool_protocol_fee(pool_id, new_fee)`
+- `set_pool_beneficiary(pool_id, new_beneficiary)`
+- `set_pool_amp_ramp(pool_id, target_factor, duration)`
+- `pause_pool(pool_id)` and `unpause_pool(pool_id)`
+- `set_pool_wasm_hash(new_hash)`
 
 ## Parameters
 
 Constructor arguments:
 
 - `owner`: address authorized for admin operations.
+- `protocol_controller`: immutable protocol-governance contract address.
 - `tokens`: sorted token contract addresses. The constructor rejects duplicates
   and unsorted input.
-- `amp_factor`: amplification factor, from `1` to `12000`.
+- `amp_factor`: amplification factor, from `1` to `50000`.
+- `amp_control`: irreversible `Locked` or `ProtocolManaged` mode.
 - `swap_fee`: fixed-point fee where `1_000_000_000` is 100%. Allowed range:
   `10_000` to `10_000_000`, or 0.001% to 1%.
 - `protocol_fee`: share of the swap fee routed to the beneficiary, also using
@@ -176,12 +207,6 @@ Generate TypeScript bindings from the built wasm:
 make bindings
 ```
 
-Run the test suite:
-
-```sh
-make test
-```
-
 Run formatting and lint checks:
 
 ```sh
@@ -214,6 +239,7 @@ make deploy \
   TOKEN_B=<second-token-contract> \
   BENEFICIARY=<fee-beneficiary> \
   AMP_FACTOR=100 \
+  AMP_CONTROL=ProtocolManaged \
   SWAP_FEE=100000 \
   PROTOCOL_FEE=0 \
   LP_NAME='USD Stable LP' \
@@ -229,11 +255,18 @@ Useful deployment variables:
 - `LP_NAME` / `LP_SYMBOL`: pool-specific SEP-41 metadata.
 - `STELLAR`: CLI binary. Set to `soroban` if using an older install.
 
-Factory registry views are `pool_count()`, `pool_at(index)`, and
-`is_pool(address)`. The registry stores no fee, amplification, beneficiary, or
-other mutable pool configuration; query the pool for current state. The factory
-owner may update `pool_wasm_hash` for future creations, while existing pools are
-unchanged. Pool creation does not seed liquidity.
+The factory assigns monotonically increasing pool IDs. `next_pool_id()` returns
+the ID that will be assigned next, while `pool_at(id)` resolves a registered
+pool and refreshes that registry entry's TTL. `PoolCreated` events provide
+off-chain discovery.
+
+The factory stores a default protocol fee and beneficiary. Pool creation copies
+those values into the new pool; later default changes affect only future pools.
+Factory governance can update a registered pool's protocol fee, beneficiary,
+delegated amplification, and pause state through ID-based proxy calls. Pool
+configuration changes never alter factory defaults. Updating the configured
+pool WASM hash also affects only future creations. Pool creation does not seed
+liquidity.
 
 Create and fund a deployment identity for the configured network:
 
@@ -268,8 +301,11 @@ classic Stellar asset wrapped by SAC, in the active pool recorded in
 - Confirm token decimals before deployment. The contract supports tokens that
   can be represented in the internal 9-decimal scale.
 - Reserve caps and LP supply caps are enforced on-chain.
-- Pausing blocks deposits, withdrawals, and swaps, but does not disable view or
-  admin methods.
+- Pausing blocks deposits and swaps. Proportional and single-token withdrawals
+  remain available so liquidity providers always retain an exit path. Either
+  the pool owner or protocol governance may pause or unpause the shared flag.
+- Factory and pool ownership cannot be renounced. Use the OpenZeppelin two-step
+  ownership transfer, including when moving governance to a multisig wallet.
 - There is no minimum-liquidity lock. The usual first-depositor inflation attack
   is mitigated structurally instead: reserves are tracked internally (direct
   token donations do not change them), the first deposit must fund every token,

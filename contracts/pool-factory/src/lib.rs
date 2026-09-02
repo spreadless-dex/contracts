@@ -5,4 +5,9 @@ mod error;
 mod interface;
 mod storage;
 
-pub use contract::{PoolCreated, PoolFactory, PoolFactoryClient, PoolWasmUpdated};
+pub use contract::{
+    DefaultBeneficiaryUpdated, DefaultProtocolFeeUpdated, PoolAmpRampSet, PoolBeneficiaryUpdated,
+    PoolCreated, PoolFactory, PoolFactoryClient, PoolPauseUpdated, PoolProtocolFeeUpdated,
+    PoolWasmUpdated,
+};
+pub use interface::AmpControl;

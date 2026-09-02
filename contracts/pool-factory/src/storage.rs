@@ -8,9 +8,44 @@ const LIFETIME_THRESHOLD: u32 = BUMP_AMOUNT - (7 * DAY_IN_LEDGERS);
 #[contracttype]
 enum DataKey {
     PoolWasmHash,
-    PoolCount,
+    DefaultProtocolFee,
+    DefaultProtocolBeneficiary,
+    NextPoolId,
     PoolAt(u32),
-    IsPool(Address),
+}
+
+pub fn set_default_protocol_fee(e: &Env, fee: u64) {
+    e.storage()
+        .instance()
+        .set(&DataKey::DefaultProtocolFee, &fee);
+    extend_instance_ttl(e);
+}
+
+pub fn default_protocol_fee(e: &Env) -> u64 {
+    let fee = e
+        .storage()
+        .instance()
+        .get(&DataKey::DefaultProtocolFee)
+        .unwrap();
+    extend_instance_ttl(e);
+    fee
+}
+
+pub fn set_default_protocol_beneficiary(e: &Env, beneficiary: &Address) {
+    e.storage()
+        .instance()
+        .set(&DataKey::DefaultProtocolBeneficiary, beneficiary);
+    extend_instance_ttl(e);
+}
+
+pub fn default_protocol_beneficiary(e: &Env) -> Address {
+    let beneficiary = e
+        .storage()
+        .instance()
+        .get(&DataKey::DefaultProtocolBeneficiary)
+        .unwrap();
+    extend_instance_ttl(e);
+    beneficiary
 }
 
 pub fn set_pool_wasm_hash(e: &Env, hash: &BytesN<32>) {
@@ -24,33 +59,32 @@ pub fn pool_wasm_hash(e: &Env) -> BytesN<32> {
     hash
 }
 
-pub fn set_pool_count(e: &Env, count: u32) {
-    e.storage().instance().set(&DataKey::PoolCount, &count);
+pub fn set_next_pool_id(e: &Env, id: u32) {
+    e.storage().instance().set(&DataKey::NextPoolId, &id);
     extend_instance_ttl(e);
 }
 
-pub fn pool_count(e: &Env) -> u32 {
-    let count = e.storage().instance().get(&DataKey::PoolCount).unwrap_or(0);
+pub fn next_pool_id(e: &Env) -> u32 {
+    let id = e
+        .storage()
+        .instance()
+        .get(&DataKey::NextPoolId)
+        .unwrap_or(0);
     extend_instance_ttl(e);
-    count
+    id
 }
 
-pub fn register_pool(e: &Env, index: u32, pool: &Address) {
-    let index_key = DataKey::PoolAt(index);
-    let address_key = DataKey::IsPool(pool.clone());
-    e.storage().persistent().set(&index_key, pool);
-    e.storage().persistent().set(&address_key, &true);
+pub fn register_pool(e: &Env, id: u32, pool: &Address) {
+    let id_key = DataKey::PoolAt(id);
+    e.storage().persistent().set(&id_key, pool);
     e.storage()
         .persistent()
-        .extend_ttl(&index_key, LIFETIME_THRESHOLD, BUMP_AMOUNT);
-    e.storage()
-        .persistent()
-        .extend_ttl(&address_key, LIFETIME_THRESHOLD, BUMP_AMOUNT);
+        .extend_ttl(&id_key, LIFETIME_THRESHOLD, BUMP_AMOUNT);
 }
 
-pub fn pool_at(e: &Env, index: u32) -> Option<Address> {
+pub fn pool_at(e: &Env, id: u32) -> Option<Address> {
     extend_instance_ttl(e);
-    let key = DataKey::PoolAt(index);
+    let key = DataKey::PoolAt(id);
     let pool = e.storage().persistent().get(&key);
     if pool.is_some() {
         e.storage()
@@ -58,18 +92,6 @@ pub fn pool_at(e: &Env, index: u32) -> Option<Address> {
             .extend_ttl(&key, LIFETIME_THRESHOLD, BUMP_AMOUNT);
     }
     pool
-}
-
-pub fn is_pool(e: &Env, pool: &Address) -> bool {
-    extend_instance_ttl(e);
-    let key = DataKey::IsPool(pool.clone());
-    let registered = e.storage().persistent().get(&key).unwrap_or(false);
-    if registered {
-        e.storage()
-            .persistent()
-            .extend_ttl(&key, LIFETIME_THRESHOLD, BUMP_AMOUNT);
-    }
-    registered
 }
 
 pub fn extend_instance_ttl(e: &Env) {

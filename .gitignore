@@ -8,5 +8,8 @@ target
 .soroban
 .stellar
 
+# macOS metadata
+.DS_Store
+
 # Temporary audit notes
 AUDIT_FINDINGS_TEMP.md

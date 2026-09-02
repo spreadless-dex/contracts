@@ -7,3 +7,4 @@ mod math;
 mod pool;
 
 pub use contract::{LiquidityPool, LiquidityPoolClient};
+pub use pool::AmpControl;

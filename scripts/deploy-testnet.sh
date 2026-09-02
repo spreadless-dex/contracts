@@ -17,6 +17,7 @@ TOKEN_C_NAME="${TOKEN_C_NAME:-Spreadless Test DAI}"
 TOKEN_C_SYMBOL="${TOKEN_C_SYMBOL:-sDAI}"
 
 AMP_FACTOR="${AMP_FACTOR:-100}"
+AMP_CONTROL="${AMP_CONTROL:-ProtocolManaged}"
 SWAP_FEE="${SWAP_FEE:-100000}"
 PROTOCOL_FEE="${PROTOCOL_FEE:-0}"
 MAX_CAP="${MAX_CAP:-30000000000000000}"
@@ -128,16 +129,17 @@ pool_wasm_hash="$(upload_contract "$liquidity_pool_wasm")"
 echo "Deploying pool factory to ${NETWORK}..."
 factory="$(deploy_contract "$pool_factory_wasm" \
   --owner "$owner" \
-  --pool_wasm_hash "$pool_wasm_hash")"
+  --pool_wasm_hash "$pool_wasm_hash" \
+  --default_protocol_fee "$PROTOCOL_FEE" \
+  --default_protocol_beneficiary "$beneficiary")"
 
 echo "Creating liquidity pool through factory..."
 pool="$(invoke_contract "$factory" create_pool \
   --creator "$owner" \
   --tokens "[\"${token_0}\",\"${token_1}\",\"${token_2}\"]" \
   --amp_factor "$AMP_FACTOR" \
+  --amp_control "$AMP_CONTROL" \
   --swap_fee "$SWAP_FEE" \
-  --protocol_fee "$PROTOCOL_FEE" \
-  --beneficiary "$beneficiary" \
   --max_caps "[\"${MAX_CAP}\",\"${MAX_CAP}\",\"${MAX_CAP}\"]" \
   --lp_max_supply "$LP_MAX_SUPPLY" \
   --lp_name "$LP_NAME" \
@@ -184,6 +186,7 @@ jq -n \
   --arg deposit_result "$deposit_result" \
   --argjson decimals "$TOKEN_DECIMALS" \
   --argjson amp_factor "$AMP_FACTOR" \
+  --arg amp_control "$AMP_CONTROL" \
   --argjson swap_fee "$SWAP_FEE" \
   --argjson protocol_fee "$PROTOCOL_FEE" \
   --arg max_cap "$MAX_CAP" \
@@ -201,6 +204,8 @@ jq -n \
         address: $factory,
         owner: $deployer,
         pool_wasm_hash: $pool_wasm_hash,
+        default_protocol_fee: $protocol_fee,
+        default_protocol_beneficiary: $beneficiary,
         permissionless_creation: true
       },
       test_tokens: [
@@ -236,6 +241,8 @@ jq -n \
         label: "3-token-usd-pool",
         address: $pool,
         owner: $deployer,
+        protocol_controller: $factory,
+        amp_control: $amp_control,
         beneficiary: $beneficiary,
         tokens: [$token_0, $token_1, $token_2],
         amp_factor: $amp_factor,

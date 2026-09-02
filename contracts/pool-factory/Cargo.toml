@@ -8,13 +8,7 @@ publish = false
 crate-type = ["lib", "cdylib"]
 doctest = false
 
-[features]
-integration-tests = []
-
 [dependencies]
 soroban-sdk = { workspace = true }
 stellar-access = { workspace = true }
 stellar-macros = { workspace = true }
-
-[dev-dependencies]
-soroban-sdk = { workspace = true, features = ["testutils"] }

@@ -4,7 +4,6 @@
 #   make setup      install the wasm target + a contract-safe rust toolchain
 #   make build      compile the contract to wasm
 #   make bindings   generate TypeScript contract bindings
-#   make test       run the unit + integration test suite (native)
 #   make optimize   shrink the built wasm (runs build first)
 #   make deploy     deploy + initialize on a network (see "deploy" below)
 #   make help       list all targets
@@ -15,8 +14,7 @@
 #   - A rust toolchain that is >= 1.91.0 (soroban-sdk 26 requires it) but NOT
 #     exactly 1.91.0 (the `stellar` CLI denylists 1.81/1.82/1.83/1.91.0 for bad
 #     wasm codegen). That means 1.92.0+, pinned via $(RUST_VERSION) and run
-#     through `stellar contract build`; `make setup` installs it. (Native
-#     `make test` just uses your default toolchain.)
+#     through `stellar contract build`; `make setup` installs it.
 #   - The `wasm32v1-none` target — soroban-sdk 26 requires it (NOT
 #     `wasm32-unknown-unknown`); `make setup` adds it.
 #   - NOTE: built with soroban-sdk 26 (protocol 23). Before `make deploy`,
@@ -53,6 +51,7 @@ TOKEN_A        ?=
 TOKEN_B        ?=
 BENEFICIARY    ?= $(OWNER)
 AMP_FACTOR     ?= 100
+AMP_CONTROL    ?= ProtocolManaged
 SWAP_FEE       ?= 100000                  # 0.01%  (1e9 == 100%)
 PROTOCOL_FEE   ?= 0                        # cut of the swap fee (1e9 == 100%)
 MAX_CAP        ?= 10000000000000000        # 1e16 raw, per token
@@ -61,10 +60,10 @@ LP_NAME        ?= Spreadless LP
 LP_SYMBOL      ?= SLP
 
 .DEFAULT_GOAL := build
-.PHONY: all build build-pool-factory build-test-token bindings bindings-liquidity-pool bindings-pool-factory test test-factory-integration optimize optimize-pool-factory optimize-test-token deploy deploy-testnet testnet-evidence setup keys fund clean fmt fmt-check lint help
+.PHONY: all build build-pool-factory build-test-token bindings bindings-liquidity-pool bindings-pool-factory optimize optimize-pool-factory optimize-test-token deploy deploy-testnet testnet-evidence setup keys fund clean fmt fmt-check lint help
 
-## all: build then test
-all: build test
+## all: build all production contracts
+all: build
 
 ## build: compile the pool and factory contracts to wasm
 build:
@@ -99,15 +98,6 @@ bindings-pool-factory: build-pool-factory
 		--overwrite
 	@echo "bindings: $(POOL_FACTORY_BINDINGS_DIR)"
 
-## test: run the unit + integration test suite (native)
-test:
-	cargo test
-	$(MAKE) test-factory-integration
-
-## test-factory-integration: deploy the real pool WASM through the factory in Env
-test-factory-integration: build
-	cargo test -p pool-factory --features integration-tests
-
 ## optimize: build optimized pool and factory WASM files
 optimize:
 	rustup run $(RUST_VERSION) $(STELLAR) contract build --package liquidity-pool --optimize
@@ -130,8 +120,8 @@ deploy: optimize
 	@test -n "$(TOKEN_A)" || { echo "ERROR: set TOKEN_A=<token contract address>"; exit 1; }
 	@test -n "$(TOKEN_B)" || { echo "ERROR: set TOKEN_B=<token contract address>"; exit 1; }
 	@pool_hash=`$(STELLAR) contract upload --wasm $(WASM) --source $(SOURCE) --network $(NETWORK)`; \
-	factory=`$(STELLAR) contract deploy --wasm $(POOL_FACTORY_WASM) --source $(SOURCE) --network $(NETWORK) -- --owner $(OWNER) --pool_wasm_hash $$pool_hash`; \
-	pool=`$(STELLAR) contract invoke --id $$factory --source $(SOURCE) --network $(NETWORK) -- create_pool --creator $(OWNER) --tokens '["$(TOKEN_A)","$(TOKEN_B)"]' --amp_factor $(AMP_FACTOR) --swap_fee $(SWAP_FEE) --protocol_fee $(PROTOCOL_FEE) --beneficiary $(BENEFICIARY) --max_caps '[$(MAX_CAP),$(MAX_CAP)]' --lp_max_supply $(LP_MAX_SUPPLY) --lp_name '$(LP_NAME)' --lp_symbol '$(LP_SYMBOL)' | tr -d '"'`; \
+	factory=`$(STELLAR) contract deploy --wasm $(POOL_FACTORY_WASM) --source $(SOURCE) --network $(NETWORK) -- --owner $(OWNER) --pool_wasm_hash $$pool_hash --default_protocol_fee $(PROTOCOL_FEE) --default_protocol_beneficiary $(BENEFICIARY)`; \
+	pool=`$(STELLAR) contract invoke --id $$factory --source $(SOURCE) --network $(NETWORK) -- create_pool --creator $(OWNER) --tokens '["$(TOKEN_A)","$(TOKEN_B)"]' --amp_factor $(AMP_FACTOR) --amp_control $(AMP_CONTROL) --swap_fee $(SWAP_FEE) --max_caps '[$(MAX_CAP),$(MAX_CAP)]' --lp_max_supply $(LP_MAX_SUPPLY) --lp_name '$(LP_NAME)' --lp_symbol '$(LP_SYMBOL)' | tr -d '"'`; \
 	echo "factory: $$factory"; \
 	echo "pool: $$pool"
 

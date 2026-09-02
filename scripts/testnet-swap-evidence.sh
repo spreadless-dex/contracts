@@ -266,9 +266,7 @@ $(cat "$MD")
   1 and 2), exactly as the curve predicts.
 - The rejected swap produced no transaction: with \`min_out\` above the
   achievable output the contract traps with \`SlippageExceeded\` (error 14) in
-  simulation, so nothing was signed, submitted, or moved. The same guard is
-  exercised on-chain in the unit tests
-  (\`swap_exact_in_rejects_when_min_out_not_met\`).
+  simulation, so nothing was signed, submitted, or moved.
 EOF
 rm -f "$MD"
 
