@@ -1,8 +1,8 @@
 use soroban_sdk::{
-    contractclient, contracttrait, contracttype,
+    contract, contractclient, contractimpl, contracttrait, contracttype,
     testutils::Address as _,
     token::{StellarAssetClient, TokenClient},
-    Address, BytesN, Env, String, Vec,
+    Address, BytesN, Env, MuxedAddress, String, Vec,
 };
 use spreadless_pool_interface::{AmpControl, SpreadlessPoolInterfaceClient};
 
@@ -70,6 +70,118 @@ trait PoolTokenAndOwnershipInterface {
     fn name(e: Env) -> String;
     fn symbol(e: Env) -> String;
     fn get_owner(e: Env) -> Option<Address>;
+    fn transfer(e: Env, from: Address, to: Address, amount: i128);
+    fn burn(e: Env, from: Address, amount: i128);
+    fn burn_from(e: Env, spender: Address, from: Address, amount: i128);
+}
+
+#[derive(Clone)]
+#[contracttype]
+enum FeeTokenKey {
+    Balance(Address),
+    FeeBps,
+}
+
+#[contract]
+struct FeeToken;
+
+#[contractimpl]
+impl FeeToken {
+    pub fn mint(e: Env, to: Address, amount: i128) {
+        fee_token_add_balance(&e, &to, amount);
+    }
+
+    pub fn set_fee_bps(e: Env, fee_bps: u32) {
+        e.storage().instance().set(&FeeTokenKey::FeeBps, &fee_bps);
+    }
+
+    pub fn allowance(_e: Env, _from: Address, _spender: Address) -> i128 {
+        0
+    }
+
+    pub fn approve(
+        _e: Env,
+        _from: Address,
+        _spender: Address,
+        _amount: i128,
+        _live_until_ledger: u32,
+    ) {
+    }
+
+    pub fn balance(e: Env, id: Address) -> i128 {
+        fee_token_balance(&e, &id)
+    }
+
+    pub fn transfer(e: Env, from: Address, to: MuxedAddress, amount: i128) {
+        from.require_auth();
+        fee_token_transfer(&e, &from, &to.address(), amount);
+    }
+
+    pub fn transfer_from(e: Env, spender: Address, from: Address, to: Address, amount: i128) {
+        spender.require_auth();
+        fee_token_transfer(&e, &from, &to, amount);
+    }
+
+    pub fn burn(e: Env, from: Address, amount: i128) {
+        from.require_auth();
+        fee_token_spend_balance(&e, &from, amount);
+    }
+
+    pub fn burn_from(e: Env, spender: Address, from: Address, amount: i128) {
+        spender.require_auth();
+        fee_token_spend_balance(&e, &from, amount);
+    }
+
+    pub fn decimals(_e: Env) -> u32 {
+        7
+    }
+
+    pub fn name(e: Env) -> String {
+        String::from_str(&e, "Fee Token")
+    }
+
+    pub fn symbol(e: Env) -> String {
+        String::from_str(&e, "FEE")
+    }
+}
+
+fn fee_token_balance(e: &Env, id: &Address) -> i128 {
+    e.storage()
+        .instance()
+        .get(&FeeTokenKey::Balance(id.clone()))
+        .unwrap_or(0)
+}
+
+fn fee_token_set_balance(e: &Env, id: &Address, amount: i128) {
+    e.storage()
+        .instance()
+        .set(&FeeTokenKey::Balance(id.clone()), &amount);
+}
+
+fn fee_token_add_balance(e: &Env, id: &Address, amount: i128) {
+    assert!(amount >= 0);
+    let next = fee_token_balance(e, id).checked_add(amount).unwrap();
+    fee_token_set_balance(e, id, next);
+}
+
+fn fee_token_spend_balance(e: &Env, id: &Address, amount: i128) {
+    assert!(amount >= 0);
+    let next = fee_token_balance(e, id)
+        .checked_sub(amount)
+        .filter(|balance| *balance >= 0)
+        .unwrap();
+    fee_token_set_balance(e, id, next);
+}
+
+fn fee_token_transfer(e: &Env, from: &Address, to: &Address, amount: i128) {
+    let fee_bps: u32 = e
+        .storage()
+        .instance()
+        .get(&FeeTokenKey::FeeBps)
+        .unwrap_or(0);
+    let fee = amount * fee_bps as i128 / 10_000;
+    fee_token_spend_balance(e, from, amount);
+    fee_token_add_balance(e, to, amount - fee);
 }
 
 struct PoolFixture {
@@ -639,4 +751,384 @@ fn router_pause_blocks_swaps_but_pool_withdrawal_remains_open() {
             .unwrap()
             > 0
     );
+}
+
+#[test]
+fn liquidity_and_admin_calls_require_the_documented_authorization() {
+    let f = pool_fixture();
+    let minted = seed_pool(&f, 500_000_000);
+    let pool = SpreadlessPoolInterfaceClient::new(&f.env, &f.pool);
+    let reserves_before = pool.get_reserves();
+    let swap_fee_before = pool.get_swap_fee();
+    let protocol_fee_before = pool.get_protocol_fee();
+    f.env.set_auths(&[]);
+
+    assert!(pool
+        .try_deposit(&f.user, &amounts(&f.env, &[1_000_000, 1_000_000]), &0)
+        .is_err());
+    assert!(pool
+        .try_swap_exact_in(&f.user, &f.token_0, &f.token_1, &1_000_000, &0)
+        .is_err());
+    assert!(pool
+        .try_withdraw(&f.user, &(minted / 10), &amounts(&f.env, &[0, 0]))
+        .is_err());
+    assert!(pool.try_set_swap_fee(&4_000_000).is_err());
+    assert!(pool.try_set_protocol_fee(&200_000_000).is_err());
+
+    assert_eq!(pool.get_reserves(), reserves_before);
+    assert_eq!(pool.get_swap_fee(), swap_fee_before);
+    assert_eq!(pool.get_protocol_fee(), protocol_fee_before);
+}
+
+#[test]
+fn router_creation_and_administration_require_authorization() {
+    let f = router_fixture();
+    let router = RouterClient::new(&f.env, &f.router);
+    let pool_address = create_pool(
+        &f,
+        &[f.token_0.clone(), f.token_1.clone()],
+        AmpControl::Locked,
+    );
+    let pool = SpreadlessPoolInterfaceClient::new(&f.env, &pool_address);
+    pool.deposit(&f.user, &amounts(&f.env, &[500_000_000, 500_000_000]), &0);
+    let reserves_before = pool.get_reserves();
+    let default_fee_before = router.get_default_protocol_fee();
+    let next_id_before = router.next_pool_id();
+    let mut path = Vec::new(&f.env);
+    path.push_back(SwapHop {
+        pool_id: 0,
+        token_out: f.token_1.clone(),
+    });
+    f.env.set_auths(&[]);
+
+    assert!(router
+        .try_create_pool(
+            &f.creator,
+            &addresses(&f.env, &[f.token_0.clone(), f.token_1.clone()]),
+            &100,
+            &AmpControl::Locked,
+            &3_000_000,
+            &amounts(&f.env, &[10_000_000_000, 10_000_000_000]),
+            &1_000_000_000_000,
+            &String::from_str(&f.env, "Unauthorized LP"),
+            &String::from_str(&f.env, "ULP"),
+        )
+        .is_err());
+    assert!(router
+        .try_swap_exact_in(&f.user, &f.token_0, &path, &1_000_000, &0)
+        .is_err());
+    assert!(router.try_set_default_protocol_fee(&200_000_000).is_err());
+
+    assert_eq!(router.next_pool_id(), next_id_before);
+    assert_eq!(router.get_default_protocol_fee(), default_fee_before);
+    assert_eq!(pool.get_reserves(), reserves_before);
+}
+
+#[test]
+fn deposit_rejects_invalid_amounts_and_vector_lengths_atomically() {
+    let f = pool_fixture();
+    seed_pool(&f, 500_000_000);
+    let pool = SpreadlessPoolInterfaceClient::new(&f.env, &f.pool);
+    let lp = PoolTokenAndOwnershipInterfaceClient::new(&f.env, &f.pool);
+    let reserves_before = pool.get_reserves();
+    let supply_before = lp.total_supply();
+
+    assert!(pool
+        .try_deposit(&f.user, &amounts(&f.env, &[-1, 1_000_000]), &0)
+        .is_err());
+    assert!(pool
+        .try_deposit(&f.user, &amounts(&f.env, &[0, 0]), &0)
+        .is_err());
+    assert!(pool
+        .try_deposit(&f.user, &amounts(&f.env, &[1_000_000]), &0)
+        .is_err());
+
+    assert_eq!(pool.get_reserves(), reserves_before);
+    assert_eq!(lp.total_supply(), supply_before);
+}
+
+#[test]
+fn swaps_reject_invalid_unknown_and_identical_tokens_atomically() {
+    let f = pool_fixture();
+    seed_pool(&f, 500_000_000);
+    let pool = SpreadlessPoolInterfaceClient::new(&f.env, &f.pool);
+    let unknown = Address::generate(&f.env);
+    let reserves_before = pool.get_reserves();
+
+    assert!(pool
+        .try_swap_exact_in(&f.user, &f.token_0, &f.token_1, &0, &0)
+        .is_err());
+    assert!(pool
+        .try_swap_exact_in(&f.user, &f.token_0, &f.token_1, &-1, &0)
+        .is_err());
+    assert!(pool
+        .try_swap_exact_in(&f.user, &unknown, &f.token_1, &1_000_000, &0)
+        .is_err());
+    assert!(pool
+        .try_swap_exact_in(&f.user, &f.token_0, &f.token_0, &1_000_000, &0)
+        .is_err());
+    assert!(pool
+        .try_swap_exact_out(&f.user, &f.token_0, &f.token_1, &0, &i128::MAX)
+        .is_err());
+
+    assert_eq!(pool.get_reserves(), reserves_before);
+}
+
+#[test]
+fn withdrawals_reject_invalid_amounts_and_vector_lengths_atomically() {
+    let f = pool_fixture();
+    let minted = seed_pool(&f, 500_000_000);
+    let pool = SpreadlessPoolInterfaceClient::new(&f.env, &f.pool);
+    let lp = PoolTokenAndOwnershipInterfaceClient::new(&f.env, &f.pool);
+    let reserves_before = pool.get_reserves();
+
+    assert!(pool
+        .try_withdraw(&f.user, &0, &amounts(&f.env, &[0, 0]))
+        .is_err());
+    assert!(pool
+        .try_withdraw(&f.user, &-1, &amounts(&f.env, &[0, 0]))
+        .is_err());
+    assert!(pool
+        .try_withdraw(&f.user, &(minted / 10), &amounts(&f.env, &[0]))
+        .is_err());
+
+    assert_eq!(pool.get_reserves(), reserves_before);
+    assert_eq!(lp.balance(&f.user), minted);
+}
+
+#[test]
+fn token_and_lp_supply_caps_reject_excess_deposits_atomically() {
+    let f = pool_fixture();
+    seed_pool(&f, 500_000_000);
+    let pool = SpreadlessPoolInterfaceClient::new(&f.env, &f.pool);
+    let reserves_before = pool.get_reserves();
+    pool.set_token_cap(&f.token_0, &500_000_000);
+
+    assert!(pool
+        .try_deposit(&f.user, &amounts(&f.env, &[1_000_000, 0]), &0)
+        .is_err());
+    assert_eq!(pool.get_reserves(), reserves_before);
+
+    let other = pool_fixture();
+    seed_pool(&other, 500_000_000);
+    let other_pool = SpreadlessPoolInterfaceClient::new(&other.env, &other.pool);
+    let lp = PoolTokenAndOwnershipInterfaceClient::new(&other.env, &other.pool);
+    let supply = lp.total_supply();
+    let other_reserves_before = other_pool.get_reserves();
+    other_pool.set_max_supply(&supply);
+
+    assert!(other_pool
+        .try_deposit(
+            &other.user,
+            &amounts(&other.env, &[1_000_000, 1_000_000]),
+            &0,
+        )
+        .is_err());
+    assert_eq!(other_pool.get_reserves(), other_reserves_before);
+    assert_eq!(lp.total_supply(), supply);
+}
+
+#[test]
+fn exact_output_swap_rejects_insufficient_max_input_atomically() {
+    let f = pool_fixture();
+    seed_pool(&f, 500_000_000);
+    let pool = SpreadlessPoolInterfaceClient::new(&f.env, &f.pool);
+    let reserves_before = pool.get_reserves();
+    let input_before = TokenClient::new(&f.env, &f.token_0).balance(&f.user);
+    let output_before = TokenClient::new(&f.env, &f.token_1).balance(&f.user);
+
+    assert!(pool
+        .try_swap_exact_out(&f.user, &f.token_0, &f.token_1, &1_000_000, &0)
+        .is_err());
+
+    assert_eq!(pool.get_reserves(), reserves_before);
+    assert_eq!(
+        TokenClient::new(&f.env, &f.token_0).balance(&f.user),
+        input_before
+    );
+    assert_eq!(
+        TokenClient::new(&f.env, &f.token_1).balance(&f.user),
+        output_before
+    );
+}
+
+#[test]
+fn withdrawal_slippage_and_unknown_token_fail_atomically() {
+    let f = pool_fixture();
+    let minted = seed_pool(&f, 500_000_000);
+    let pool = SpreadlessPoolInterfaceClient::new(&f.env, &f.pool);
+    let lp = PoolTokenAndOwnershipInterfaceClient::new(&f.env, &f.pool);
+    let unknown = Address::generate(&f.env);
+    let reserves_before = pool.get_reserves();
+
+    assert!(pool
+        .try_withdraw(&f.user, &(minted / 10), &amounts(&f.env, &[i128::MAX, 0]),)
+        .is_err());
+    assert!(pool
+        .try_withdraw_one_token(&f.user, &(minted / 10), &f.token_0, &i128::MAX)
+        .is_err());
+    assert!(pool
+        .try_withdraw_one_token(&f.user, &(minted / 10), &unknown, &0)
+        .is_err());
+
+    assert_eq!(pool.get_reserves(), reserves_before);
+    assert_eq!(lp.balance(&f.user), minted);
+}
+
+#[test]
+fn locked_amplification_cannot_be_changed_through_router() {
+    let f = router_fixture();
+    let pool_address = create_pool(
+        &f,
+        &[f.token_0.clone(), f.token_1.clone()],
+        AmpControl::Locked,
+    );
+    let pool = SpreadlessPoolInterfaceClient::new(&f.env, &pool_address);
+    let amp_before = pool.get_amp();
+
+    assert!(RouterClient::new(&f.env, &f.router)
+        .try_set_pool_amp_ramp(&0, &200, &100)
+        .is_err());
+    assert_eq!(pool.get_amp(), amp_before);
+}
+
+#[test]
+fn invalid_admin_updates_preserve_existing_configuration() {
+    let f = pool_fixture();
+    let pool = SpreadlessPoolInterfaceClient::new(&f.env, &f.pool);
+    let swap_fee_before = pool.get_swap_fee();
+    let protocol_fee_before = pool.get_protocol_fee();
+
+    assert!(pool.try_set_swap_fee(&10_000_001).is_err());
+    assert!(pool.try_set_protocol_fee(&1_000_000_001).is_err());
+    assert_eq!(pool.get_swap_fee(), swap_fee_before);
+    assert_eq!(pool.get_protocol_fee(), protocol_fee_before);
+
+    let router_fixture = router_fixture();
+    let router = RouterClient::new(&router_fixture.env, &router_fixture.router);
+    let default_before = router.get_default_protocol_fee();
+    assert!(router.try_set_default_protocol_fee(&1_000_000_001).is_err());
+    assert_eq!(router.get_default_protocol_fee(), default_before);
+}
+
+#[test]
+fn direct_lp_burns_are_disabled_and_preserve_supply() {
+    let f = pool_fixture();
+    let minted = seed_pool(&f, 500_000_000);
+    let lp = PoolTokenAndOwnershipInterfaceClient::new(&f.env, &f.pool);
+    let spender = Address::generate(&f.env);
+
+    assert!(lp.try_burn(&f.user, &(minted / 10)).is_err());
+    assert!(lp.try_burn_from(&spender, &f.user, &(minted / 10)).is_err());
+    assert_eq!(lp.balance(&f.user), minted);
+    assert_eq!(lp.total_supply(), minted);
+}
+
+#[test]
+fn fee_on_transfer_input_is_rejected_without_recording_phantom_reserves() {
+    let e = Env::default();
+    e.cost_estimate().budget().reset_unlimited();
+    e.mock_all_auths();
+    let owner = Address::generate(&e);
+    let controller = Address::generate(&e);
+    let beneficiary = Address::generate(&e);
+    let user = Address::generate(&e);
+    let admin = Address::generate(&e);
+    let sac = deploy_token(&e, &admin);
+    let fee_token = e.register(FeeToken, ());
+    let fee = FeeTokenClient::new(&e, &fee_token);
+    fee.set_fee_bps(&1_000);
+    fee.mint(&user, &500_000_000);
+    mint(&e, &sac, &user, 500_000_000);
+    let (token_0, token_1) = sorted_pair(fee_token, sac);
+    let pool_address = e.register(
+        POOL_WASM,
+        (
+            owner,
+            controller,
+            addresses(&e, &[token_0, token_1]),
+            100_u32,
+            AmpControl::ProtocolManaged,
+            3_000_000_u64,
+            0_u64,
+            beneficiary,
+            amounts(&e, &[10_000_000_000, 10_000_000_000]),
+            1_000_000_000_000_i128,
+            String::from_str(&e, "Fee Test LP"),
+            String::from_str(&e, "FTLP"),
+        ),
+    );
+    let pool = SpreadlessPoolInterfaceClient::new(&e, &pool_address);
+
+    assert!(pool
+        .try_deposit(&user, &amounts(&e, &[500_000_000, 500_000_000]), &0)
+        .is_err());
+    assert_eq!(pool.get_reserves(), amounts(&e, &[0, 0]));
+}
+
+#[test]
+fn router_pool_administration_rejects_unknown_ids() {
+    let f = router_fixture();
+    let router = RouterClient::new(&f.env, &f.router);
+    let beneficiary = Address::generate(&f.env);
+
+    assert!(router.try_set_pool_protocol_fee(&999, &0).is_err());
+    assert!(router.try_set_pool_beneficiary(&999, &beneficiary).is_err());
+    assert!(router.try_set_pool_amp_ramp(&999, &200, &100).is_err());
+    assert!(router.try_pause_pool(&999).is_err());
+    assert!(router.try_unpause_pool(&999).is_err());
+    assert_eq!(router.pool_at(&999), None);
+}
+
+#[test]
+fn invalid_pool_configuration_does_not_register_or_consume_an_id() {
+    let f = router_fixture();
+    let router = RouterClient::new(&f.env, &f.router);
+    let tokens = addresses(&f.env, &[f.token_0.clone(), f.token_1.clone()]);
+    let caps = amounts(&f.env, &[10_000_000_000, 10_000_000_000]);
+    let name = String::from_str(&f.env, "Invalid LP");
+    let symbol = String::from_str(&f.env, "ILP");
+
+    assert!(router
+        .try_create_pool(
+            &f.creator,
+            &tokens,
+            &0,
+            &AmpControl::Locked,
+            &3_000_000,
+            &caps,
+            &1_000_000_000_000,
+            &name,
+            &symbol,
+        )
+        .is_err());
+    assert!(router
+        .try_create_pool(
+            &f.creator,
+            &tokens,
+            &100,
+            &AmpControl::Locked,
+            &10_000_001,
+            &caps,
+            &1_000_000_000_000,
+            &name,
+            &symbol,
+        )
+        .is_err());
+    assert!(router
+        .try_create_pool(
+            &f.creator,
+            &tokens,
+            &100,
+            &AmpControl::Locked,
+            &3_000_000,
+            &amounts(&f.env, &[10_000_000_000]),
+            &1_000_000_000_000,
+            &name,
+            &symbol,
+        )
+        .is_err());
+
+    assert_eq!(router.next_pool_id(), 0);
+    assert_eq!(router.pool_at(&0), None);
 }
