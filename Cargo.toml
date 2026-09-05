@@ -6,6 +6,7 @@ members = [
 
 [workspace.dependencies]
 soroban-sdk = "26"
+proptest = "1"
 
 # OpenZeppelin Stellar (Soroban) contracts. The 0.7.x line is only internally
 # consistent at 0.7.2 (its votes extension pulls stellar-governance, published

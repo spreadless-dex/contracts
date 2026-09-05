@@ -18,6 +18,8 @@ mod normalized;
 mod quote;
 mod scaling;
 mod state;
+#[cfg(test)]
+mod tests;
 
 pub use amp::{current_amp, is_valid_amp_factor, ramp_amp};
 pub use fee::{is_valid_protocol_fee, is_valid_swap_fee};
