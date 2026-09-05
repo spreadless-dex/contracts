@@ -56,6 +56,9 @@ execution evidence. New pools should be created through the exported router.
 
 | What | Value |
 | --- | --- |
+| Active router | `CA4VB4SJQAPWBRTMEHCTX7GZ7KC2DGS7PXV6BEZUI3WUOKRGOQ7VCV6M` |
+| Default protocol share | 33% of the pool swap fee |
+| Pool deployment swap fee | 1% |
 | Pool contract | `CCAD3EH4P74PVYL3IC6ND7RSV6NYYOMUMNKRNVBJYOVIZP7Z2QS5XTSN` |
 | Network passphrase | `Test SDF Network ; September 2015` |
 | RPC URL | `https://soroban-testnet.stellar.org` |
