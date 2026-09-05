@@ -1,7 +1,7 @@
 {
   "version": "0.0.1",
   "name": "@spreadless-dex/sdk",
-  "description": "TypeScript SDK for the Spreadless liquidity-pool Soroban contract.",
+  "description": "TypeScript SDK for the Spreadless pool Soroban contract.",
   "type": "module",
   "exports": {
     ".": {

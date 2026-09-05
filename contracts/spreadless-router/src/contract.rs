@@ -1,26 +1,17 @@
 #![allow(dead_code, clippy::too_many_arguments)]
 
 use soroban_sdk::{
-    contract, contractclient, contractevent, contractimpl, panic_with_error, Address, BytesN, Env,
-    String, Vec,
+    contract, contractevent, contractimpl, panic_with_error, Address, BytesN, Env, String, Vec,
 };
+use spreadless_pool_interface::SpreadlessPoolInterfaceClient;
 use stellar_access::ownable::{self, Ownable};
 use stellar_macros::only_owner;
 
 use crate::error::Error;
-use crate::interface::{AmpControl, PoolFactoryInterface};
+use crate::interface::{AmpControl, SpreadlessRouterInterface, SwapHop};
 use crate::storage;
 
 const PROTOCOL_FEE_SCALE: u64 = 1_000_000_000;
-
-#[contractclient(name = "ManagedPoolClient")]
-trait ManagedPool {
-    fn set_protocol_fee(e: Env, protocol_fee: u64);
-    fn set_beneficiary(e: Env, beneficiary: Address);
-    fn set_amp_ramp(e: Env, target_factor: u32, duration: u64);
-    fn protocol_pause(e: Env);
-    fn protocol_unpause(e: Env);
-}
 
 #[contractevent]
 #[derive(Clone)]
@@ -88,10 +79,10 @@ pub struct PoolPauseUpdated {
 }
 
 #[contract]
-pub struct PoolFactory;
+pub struct SpreadlessRouter;
 
 #[contractimpl]
-impl PoolFactory {
+impl SpreadlessRouter {
     pub fn __constructor(
         e: Env,
         owner: Address,
@@ -109,7 +100,7 @@ impl PoolFactory {
 }
 
 #[contractimpl(contracttrait)]
-impl PoolFactoryInterface for PoolFactory {
+impl SpreadlessRouterInterface for SpreadlessRouter {
     fn create_pool(
         e: Env,
         creator: Address,
@@ -166,6 +157,44 @@ impl PoolFactoryInterface for PoolFactory {
         pool
     }
 
+    fn swap_exact_in(
+        e: Env,
+        to: Address,
+        token_in: Address,
+        path: Vec<SwapHop>,
+        amount_in: i128,
+        min_out: i128,
+    ) -> i128 {
+        to.require_auth();
+
+        let path_len = path.len();
+        if path_len == 0 {
+            panic_with_error!(&e, Error::EmptySwapPath);
+        }
+
+        let mut current_token = token_in;
+        let mut current_amount = amount_in;
+
+        for (index, hop) in path.iter().enumerate() {
+            let pool = registered_pool(&e, hop.pool_id);
+
+            let last_hop = index + 1 == path_len as usize;
+            let hop_min_out = if last_hop { min_out } else { 0 };
+
+            current_amount = SpreadlessPoolInterfaceClient::new(&e, &pool).swap_exact_in(
+                &to,
+                &current_token,
+                &hop.token_out,
+                &current_amount,
+                &hop_min_out,
+            );
+
+            current_token = hop.token_out;
+        }
+
+        current_amount
+    }
+
     fn next_pool_id(e: Env) -> u32 {
         storage::next_pool_id(&e)
     }
@@ -215,14 +244,14 @@ impl PoolFactoryInterface for PoolFactory {
     #[only_owner]
     fn set_pool_protocol_fee(e: Env, pool_id: u32, new_fee: u64) {
         let pool = registered_pool(&e, pool_id);
-        ManagedPoolClient::new(&e, &pool).set_protocol_fee(&new_fee);
+        SpreadlessPoolInterfaceClient::new(&e, &pool).set_protocol_fee(&new_fee);
         PoolProtocolFeeUpdated { pool, new_fee }.publish(&e);
     }
 
     #[only_owner]
     fn set_pool_beneficiary(e: Env, pool_id: u32, new_beneficiary: Address) {
         let pool = registered_pool(&e, pool_id);
-        ManagedPoolClient::new(&e, &pool).set_beneficiary(&new_beneficiary);
+        SpreadlessPoolInterfaceClient::new(&e, &pool).set_beneficiary(&new_beneficiary);
         PoolBeneficiaryUpdated {
             pool,
             new_beneficiary,
@@ -233,7 +262,7 @@ impl PoolFactoryInterface for PoolFactory {
     #[only_owner]
     fn set_pool_amp_ramp(e: Env, pool_id: u32, target_factor: u32, duration: u64) {
         let pool = registered_pool(&e, pool_id);
-        ManagedPoolClient::new(&e, &pool).set_amp_ramp(&target_factor, &duration);
+        SpreadlessPoolInterfaceClient::new(&e, &pool).set_amp_ramp(&target_factor, &duration);
         PoolAmpRampSet {
             pool,
             target_factor,
@@ -245,14 +274,14 @@ impl PoolFactoryInterface for PoolFactory {
     #[only_owner]
     fn pause_pool(e: Env, pool_id: u32) {
         let pool = registered_pool(&e, pool_id);
-        ManagedPoolClient::new(&e, &pool).protocol_pause();
+        SpreadlessPoolInterfaceClient::new(&e, &pool).protocol_pause();
         PoolPauseUpdated { pool, paused: true }.publish(&e);
     }
 
     #[only_owner]
     fn unpause_pool(e: Env, pool_id: u32) {
         let pool = registered_pool(&e, pool_id);
-        ManagedPoolClient::new(&e, &pool).protocol_unpause();
+        SpreadlessPoolInterfaceClient::new(&e, &pool).protocol_unpause();
         PoolPauseUpdated {
             pool,
             paused: false,
@@ -262,7 +291,7 @@ impl PoolFactoryInterface for PoolFactory {
 }
 
 #[contractimpl(contracttrait)]
-impl Ownable for PoolFactory {
+impl Ownable for SpreadlessRouter {
     fn renounce_ownership(e: &Env) {
         panic_with_error!(e, Error::OwnershipRenunciationDisabled);
     }

@@ -17,7 +17,24 @@ export declare const Errors: {
     4: {
         message: string;
     };
+    5: {
+        message: string;
+    };
 };
+/**
+ * One leg of an exact-input routed swap.
+ *
+ * `token_in` is implicit: it is the router's `token_in` for the first hop and
+ * the previous hop's `token_out` thereafter.
+ */
+export interface SwapHop {
+    pool_id: u32;
+    token_out: string;
+}
+/**
+ * Determines whether the pool's amplification factor is permanently fixed or
+ * delegated to the immutable protocol controller.
+ */
 export type AmpControl = {
     tag: "Locked";
     values: void;
@@ -97,6 +114,16 @@ export interface Client {
     unpause_pool: ({ pool_id }: {
         pool_id: u32;
     }, options?: MethodOptions) => Promise<AssembledTransaction<null>>;
+    /**
+     * Construct and simulate a swap_exact_in transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+     */
+    swap_exact_in: ({ to, token_in, path, amount_in, min_out }: {
+        to: string;
+        token_in: string;
+        path: Array<SwapHop>;
+        amount_in: i128;
+        min_out: i128;
+    }, options?: MethodOptions) => Promise<AssembledTransaction<i128>>;
     /**
      * Construct and simulate a accept_ownership transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
      * Accepts a pending ownership transfer.
@@ -233,6 +260,7 @@ export declare class Client extends ContractClient {
         create_pool: (json: string) => AssembledTransaction<string>;
         next_pool_id: (json: string) => AssembledTransaction<number>;
         unpause_pool: (json: string) => AssembledTransaction<null>;
+        swap_exact_in: (json: string) => AssembledTransaction<bigint>;
         accept_ownership: (json: string) => AssembledTransaction<null>;
         set_pool_amp_ramp: (json: string) => AssembledTransaction<null>;
         get_pool_wasm_hash: (json: string) => AssembledTransaction<Buffer>;

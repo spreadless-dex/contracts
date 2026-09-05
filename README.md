@@ -1,14 +1,14 @@
 # Spreadless
 
-Spreadless is a Soroban liquidity-pool contract for swapping between correlated
+Spreadless is a Soroban pool protocol for swapping between correlated
 assets with low slippage. It supports 2 or more tokens, mints its own SEP-41 LP
 share token, and keeps pool accounting in one contract.
 
-The standalone pool-factory contract permissionlessly deploys pools from a
-governance-selected liquidity-pool WASM hash and assigns each pool an on-chain
+The Spreadless router contract permissionlessly deploys pools from a
+governance-selected pool WASM hash and assigns each pool an on-chain
 ID. The authenticated creator owns the new pool; identical token baskets are
-intentionally allowed. The factory is also each
-pool's immutable protocol controller, while factory ownership determines who
+intentionally allowed. The router is also each
+pool's immutable protocol controller, while router ownership determines who
 may exercise that authority.
 
 The contract is implemented in Rust with `soroban-sdk` 26 and OpenZeppelin
@@ -39,7 +39,7 @@ closely the pool behaves like a flat-price market around balance:
   reserves diverge.
 - At creation the creator permanently chooses `Locked` amplification or
   `ProtocolManaged` amplification. Locked amplification never changes;
-  protocol-managed amplification can be changed only through factory
+  protocol-managed amplification can be changed only through router
   governance, either immediately or with a linear ramp.
 
 LP shares are the pool contract's own SEP-41 token:
@@ -119,7 +119,7 @@ Pool-owner operations:
 - `pause()`
 - `unpause()`
 
-Protocol-controller operations, normally invoked by factory governance:
+Protocol-controller operations, normally invoked by router governance:
 
 - `set_amp_ramp(target_factor, duration)`
 - `set_protocol_fee(protocol_fee)`
@@ -132,9 +132,11 @@ LP-token methods such as `balance`, `total_supply`, `approve`, `transfer`, and
 `transfer_from`. Ownership renunciation always reverts; control must be
 transferred explicitly.
 
-Factory operations:
+Router operations:
 
 - `create_pool(creator, tokens, amp_factor, amp_control, swap_fee, max_caps, lp_max_supply, lp_name, lp_symbol)`
+- `swap_exact_in(to, token_in, path, amount_in, min_out) -> i128`, where each
+  path hop contains a registered `pool_id` and its `token_out`
 - `next_pool_id()` and `pool_at(id)`
 - `set_default_protocol_fee(new_fee)`
 - `set_default_protocol_beneficiary(new_beneficiary)`
@@ -171,14 +173,14 @@ All amount vectors use the pool token order returned by `get_tokens()`.
 ```text
 .
 ├── contracts
-│   ├── liquidity-pool
+│   ├── spreadless-pool-interface # shared pool ABI and generated Rust client
+│   ├── spreadless-pool
 │       ├── src
 │       │   ├── contract.rs     # entrypoints, transfer checks, LP token impl
-│       │   ├── interface.rs    # public interface documentation
 │       │   ├── math            # invariant, swap, deposit, withdraw math
 │       │   └── pool            # state, scaling, fees, quotes, amp ramps
 │       └── Cargo.toml
-│   └── pool-factory           # permissionless deployer + pool registry
+│   └── spreadless-router       # deployer + registry + governance + routing
 ├── docs
 │   ├── provenance.md           # translated vs adapted vs new, vs upstream
 │   └── testnet-swap-evidence.md# recorded testnet swaps with slippage data
@@ -214,7 +216,7 @@ make fmt-check
 make lint
 ```
 
-Build optimized pool and factory WASM files:
+Build optimized pool and router WASM files:
 
 ```sh
 make optimize
@@ -229,7 +231,7 @@ make deploy-testnet SOURCE=<stellar-identity>
 ## Deploy
 
 The Makefile includes a 2-token deployment template. It uploads the pool WASM,
-deploys a factory, then creates the pool through that factory. `TOKEN_A` and
+deploys a router, then creates the pool through that router. `TOKEN_A` and
 `TOKEN_B` must be SEP-41-compatible token addresses in strictly ascending order.
 
 ```sh
@@ -255,16 +257,16 @@ Useful deployment variables:
 - `LP_NAME` / `LP_SYMBOL`: pool-specific SEP-41 metadata.
 - `STELLAR`: CLI binary. Set to `soroban` if using an older install.
 
-The factory assigns monotonically increasing pool IDs. `next_pool_id()` returns
+The router assigns monotonically increasing pool IDs. `next_pool_id()` returns
 the ID that will be assigned next, while `pool_at(id)` resolves a registered
 pool and refreshes that registry entry's TTL. `PoolCreated` events provide
 off-chain discovery.
 
-The factory stores a default protocol fee and beneficiary. Pool creation copies
+The router stores a default protocol fee and beneficiary. Pool creation copies
 those values into the new pool; later default changes affect only future pools.
-Factory governance can update a registered pool's protocol fee, beneficiary,
+Router governance can update a registered pool's protocol fee, beneficiary,
 delegated amplification, and pause state through ID-based proxy calls. Pool
-configuration changes never alter factory defaults. Updating the configured
+configuration changes never alter router defaults. Updating the configured
 pool WASM hash also affects only future creations. Pool creation does not seed
 liquidity.
 
@@ -281,8 +283,8 @@ For demo and integration testing, `make deploy-testnet` deploys:
 - `sUSDC`: an uncapped SEP-41 test token with open `mint(to, amount)`.
 - `sUSDT`: an uncapped SEP-41 test token with open `mint(to, amount)`.
 - `sDAI`: an uncapped SEP-41 test token with open `mint(to, amount)`.
-- A pool factory configured with the uploaded liquidity-pool WASM hash.
-- A liquidity pool created through that factory with the three token addresses.
+- A Spreadless router configured with the uploaded pool WASM hash.
+- A Spreadless pool created through that router with the three token addresses.
 
 The script mints an initial balance of each token to the deployer, seeds the
 first pool deposit, and writes the resulting contract addresses to

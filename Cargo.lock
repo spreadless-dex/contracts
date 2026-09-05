@@ -863,17 +863,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b6d2cec3eae94f9f509c767b45932f1ada8350c4bdb85af2fcab4a3c14807981"
 
 [[package]]
-name = "liquidity-pool"
-version = "0.0.0"
-dependencies = [
- "soroban-sdk",
- "stellar-access",
- "stellar-contract-utils",
- "stellar-macros",
- "stellar-tokens",
-]
-
-[[package]]
 name = "log"
 version = "0.4.33"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -979,15 +968,6 @@ checksum = "f950b2377845cebe5cf8b5165cb3cc1a5e0fa5cfa3e1f7f55707d8fd82e0a7b7"
 dependencies = [
  "der",
  "spki",
-]
-
-[[package]]
-name = "pool-factory"
-version = "0.0.0"
-dependencies = [
- "soroban-sdk",
- "stellar-access",
- "stellar-macros",
 ]
 
 [[package]]
@@ -1482,6 +1462,35 @@ checksum = "d91ed6c858b01f942cd56b37a94b3e0a1798290327d1236e4d9cf4eaca44d29d"
 dependencies = [
  "base64ct",
  "der",
+]
+
+[[package]]
+name = "spreadless-pool"
+version = "0.0.0"
+dependencies = [
+ "soroban-sdk",
+ "spreadless-pool-interface",
+ "stellar-access",
+ "stellar-contract-utils",
+ "stellar-macros",
+ "stellar-tokens",
+]
+
+[[package]]
+name = "spreadless-pool-interface"
+version = "0.0.0"
+dependencies = [
+ "soroban-sdk",
+]
+
+[[package]]
+name = "spreadless-router"
+version = "0.0.0"
+dependencies = [
+ "soroban-sdk",
+ "spreadless-pool-interface",
+ "stellar-access",
+ "stellar-macros",
 ]
 
 [[package]]

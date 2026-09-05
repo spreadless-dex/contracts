@@ -10,9 +10,9 @@ use stellar_macros::{only_owner, when_not_paused};
 use stellar_tokens::fungible::{burnable::FungibleBurnable, capped, Base, FungibleToken};
 
 use crate::error::Error;
-use crate::interface::LiquidityPoolInterface;
 use crate::math::{AMP_PRECISION, MAX_TOKENS, MIN_TOKENS};
 use crate::pool::{self, Pool, PoolToken};
+use spreadless_pool_interface::SpreadlessPoolInterface;
 
 contractmeta!(
     key = "Description",
@@ -73,10 +73,10 @@ pub struct Swap {
 /// The liquidity pool. It is simultaneously the AMM and its own SEP-41 LP-share
 /// token (Uniswap-V2-pair style).
 #[contract]
-pub struct LiquidityPool;
+pub struct SpreadlessPool;
 
 #[contractimpl]
-impl LiquidityPool {
+impl SpreadlessPool {
     /// Initialize the pool.
     ///
     /// * `tokens` must be 2..=MAX_TOKENS distinct addresses in strictly
@@ -172,7 +172,7 @@ impl LiquidityPool {
 }
 
 #[contractimpl(contracttrait)]
-impl LiquidityPoolInterface for LiquidityPool {
+impl SpreadlessPoolInterface for SpreadlessPool {
     #[when_not_paused]
     fn deposit(e: Env, to: Address, amounts_in: Vec<i128>, min_lp_out: i128) -> i128 {
         to.require_auth();
@@ -846,12 +846,12 @@ fn raw_delta_to_internal(e: &Env, token: &PoolToken, delta: i128) -> u64 {
 // reserves through `withdraw` or `withdraw_one_token`.
 
 #[contractimpl(contracttrait)]
-impl FungibleToken for LiquidityPool {
+impl FungibleToken for SpreadlessPool {
     type ContractType = Base;
 }
 
 #[contractimpl(contracttrait)]
-impl FungibleBurnable for LiquidityPool {
+impl FungibleBurnable for SpreadlessPool {
     fn burn(e: &Env, _from: Address, _amount: i128) {
         panic_with_error!(e, Error::DirectLpBurnDisabled);
     }
@@ -865,7 +865,7 @@ impl FungibleBurnable for LiquidityPool {
 // constructor seeds the owner via `ownable::set_owner`; renunciation is
 // deliberately disabled so administration can only move to another address.
 #[contractimpl(contracttrait)]
-impl Ownable for LiquidityPool {
+impl Ownable for SpreadlessPool {
     fn renounce_ownership(e: &Env) {
         panic_with_error!(e, Error::OwnershipRenunciationDisabled);
     }

@@ -1,8 +1,10 @@
-//! The `LiquidityPool` contract's entrypoints, minus the deploy-time
+#![no_std]
+
+//! The Spreadless pool contract's entrypoints, minus the deploy-time
 //! constructor. The contract implements this trait via
 //! `#[contractimpl(contracttrait)]`, so the interface and implementation cannot
 //! drift (a mismatch won't compile), and the same macro generates the
-//! `LiquidityPoolClient` used by callers and tests.
+//! `SpreadlessPoolInterfaceClient` used by other contracts.
 //!
 //! The constructor is separate (constructors can't be trait methods), exposed as
 //! the inherent `__constructor(owner, protocol_controller, tokens, amp_factor,
@@ -32,13 +34,20 @@
 
 #![allow(dead_code)] // trait methods aren't "used" on a plain host build
 
-use soroban_sdk::{contracttrait, Address, Env, Vec};
+use soroban_sdk::{contracttrait, contracttype, Address, Env, Vec};
 
-use crate::pool::AmpControl;
+/// Determines whether the pool's amplification factor is permanently fixed or
+/// delegated to the immutable protocol controller.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[contracttype]
+pub enum AmpControl {
+    Locked,
+    ProtocolManaged,
+}
 
 /// The contract's entrypoints; see the module docs for conventions.
 #[contracttrait]
-pub trait LiquidityPoolInterface {
+pub trait SpreadlessPoolInterface {
     // --- liquidity (require `to`'s auth; deposits are blocked while paused) ---
 
     /// Add liquidity with an exact `amounts_in` (one per token, in token order)
@@ -192,7 +201,7 @@ pub trait LiquidityPoolInterface {
 }
 
 // ---------------------------------------------------------------------------
-// Also exposed by the contract (and on `LiquidityPoolClient`) from OpenZeppelin,
+// Also exposed by the contract (and on `SpreadlessPoolClient`) from OpenZeppelin,
 // not redeclared above to avoid drift:
 //
 // 2-step ownership (stellar_access::ownable::Ownable):

@@ -1,6 +1,6 @@
 {
   "version": "0.0.0",
-  "name": "pool-factory",
+  "name": "@spreadless-dex/router-sdk",
   "type": "module",
   "exports": "./dist/index.js",
   "typings": "dist/index.d.ts",

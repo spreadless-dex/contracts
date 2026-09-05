@@ -1,7 +1,7 @@
 # @spreadless-dex/sdk
 
 TypeScript SDK for the [Spreadless](https://github.com/spreadless-dex/contracts)
-`liquidity-pool` Soroban contract — a StableSwap-style AMM on Stellar for
+Spreadless pool Soroban contract — a StableSwap-style AMM on Stellar for
 swapping between correlated assets with low slippage.
 
 The SDK is a thin, fully-typed client generated from the deployed contract. It
@@ -9,7 +9,7 @@ wraps every entrypoint (swaps, deposits, withdrawals, the SEP-41 LP token, and
 admin controls) in an `async` method and talks to the network over Soroban RPC.
 
 The current ABI separates pool-owner administration from protocol governance.
-Each pool permanently records its factory as protocol controller and chooses
+Each pool permanently records its router as protocol controller and chooses
 either locked or protocol-managed amplification at creation.
 
 - [Install](#install)
@@ -251,7 +251,7 @@ Inline JSDoc for each is available in your editor via `pool.` autocomplete.
 | `get_reserves()` | `bigint[]` | Current reserves in raw units, token order. |
 | `get_amp()` | `number` | Effective amplification factor (reflects any ramp). |
 | `get_amp_control()` | `AmpControl` | Immutable `Locked` or `ProtocolManaged` mode. |
-| `get_protocol_controller()` | `string` | Immutable factory controller address. |
+| `get_protocol_controller()` | `string` | Immutable router controller address. |
 | `get_swap_fee()` | `bigint` | Current swap fee. |
 | `get_protocol_fee()` | `bigint` | Current protocol cut of the swap fee. |
 | `get_beneficiary()` | `string` | Current protocol-fee beneficiary. |
@@ -295,8 +295,8 @@ Withdrawals remain available while the pool is paused.
 
 ### Protocol-controller administration
 
-These methods authenticate the immutable factory controller and are normally
-reached through factory governance proxies.
+These methods authenticate the immutable router controller and are normally
+reached through router governance proxies.
 
 | Method | Args |
 | --- | --- |

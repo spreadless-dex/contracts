@@ -33,15 +33,15 @@ RUST_VERSION   ?= 1.92.0
 # `wasm32-unknown-unknown` enables wasm features Soroban rejects.
 TARGET_TRIPLE  ?= wasm32v1-none
 
-WASM_NAME      := liquidity_pool
-POOL_FACTORY_WASM_NAME := pool_factory
+POOL_WASM_NAME := spreadless_pool
+ROUTER_WASM_NAME := spreadless_router
 TEST_TOKEN_WASM_NAME := test_token
 RELEASE_DIR    := target/$(TARGET_TRIPLE)/release
-WASM           := $(RELEASE_DIR)/$(WASM_NAME).wasm
-POOL_FACTORY_WASM := $(RELEASE_DIR)/$(POOL_FACTORY_WASM_NAME).wasm
+POOL_WASM      := $(RELEASE_DIR)/$(POOL_WASM_NAME).wasm
+ROUTER_WASM    := $(RELEASE_DIR)/$(ROUTER_WASM_NAME).wasm
 TEST_TOKEN_WASM := $(RELEASE_DIR)/$(TEST_TOKEN_WASM_NAME).wasm
-BINDINGS_DIR   ?= bindings/liquidity-pool
-POOL_FACTORY_BINDINGS_DIR ?= bindings/pool-factory
+POOL_BINDINGS_DIR ?= bindings/liquidity-pool
+ROUTER_BINDINGS_DIR ?= bindings/pool-factory
 
 # --- constructor arguments for `make deploy` (2-token template) ---
 # OWNER/TOKEN_A/TOKEN_B are required; TOKEN_A and TOKEN_B must be SEP-41/SAC
@@ -60,69 +60,73 @@ LP_NAME        ?= Spreadless LP
 LP_SYMBOL      ?= SLP
 
 .DEFAULT_GOAL := build
-.PHONY: all build build-pool-factory build-test-token bindings bindings-liquidity-pool bindings-pool-factory optimize optimize-pool-factory optimize-test-token deploy deploy-testnet testnet-evidence setup keys fund clean fmt fmt-check lint help
+.PHONY: all build build-pool build-router build-test-token bindings bindings-pool bindings-router optimize optimize-pool optimize-router optimize-test-token deploy deploy-testnet testnet-evidence setup keys fund clean fmt fmt-check lint help
 
 ## all: build all production contracts
 all: build
 
-## build: compile the pool and factory contracts to wasm
-build:
-	rustup run $(RUST_VERSION) $(STELLAR) contract build --package liquidity-pool
-	@echo "built: $(WASM)"
-	$(MAKE) build-pool-factory
+## build: compile the Spreadless pool and router contracts to wasm
+build: build-pool build-router
 
-## build-pool-factory: compile the standalone pool factory contract to wasm
-build-pool-factory:
-	rustup run $(RUST_VERSION) $(STELLAR) contract build --package pool-factory
-	@echo "built: $(POOL_FACTORY_WASM)"
+## build-pool: compile the Spreadless pool contract to wasm
+build-pool:
+	rustup run $(RUST_VERSION) $(STELLAR) contract build --package spreadless-pool
+	@echo "built: $(POOL_WASM)"
+
+## build-router: compile the Spreadless router contract to wasm
+build-router:
+	rustup run $(RUST_VERSION) $(STELLAR) contract build --package spreadless-router
+	@echo "built: $(ROUTER_WASM)"
 
 ## build-test-token: compile the open-mint test token to wasm
 build-test-token:
 	rustup run $(RUST_VERSION) $(STELLAR) contract build --package test-token
 	@echo "built: $(TEST_TOKEN_WASM)"
 
-## bindings: generate TypeScript bindings for the pool and factory
-bindings: bindings-liquidity-pool bindings-pool-factory
+## bindings: generate TypeScript bindings for the pool and router
+bindings: bindings-pool bindings-router
 
-bindings-liquidity-pool: build
+bindings-pool: build-pool
 	$(STELLAR) contract bindings typescript \
-		--wasm $(WASM) \
-		--output-dir $(BINDINGS_DIR) \
+		--wasm $(POOL_WASM) \
+		--output-dir $(POOL_BINDINGS_DIR) \
 		--overwrite
-	@echo "bindings: $(BINDINGS_DIR)"
+	@echo "bindings: $(POOL_BINDINGS_DIR)"
 
-bindings-pool-factory: build-pool-factory
+bindings-router: build-router
 	$(STELLAR) contract bindings typescript \
-		--wasm $(POOL_FACTORY_WASM) \
-		--output-dir $(POOL_FACTORY_BINDINGS_DIR) \
+		--wasm $(ROUTER_WASM) \
+		--output-dir $(ROUTER_BINDINGS_DIR) \
 		--overwrite
-	@echo "bindings: $(POOL_FACTORY_BINDINGS_DIR)"
+	@echo "bindings: $(ROUTER_BINDINGS_DIR)"
 
-## optimize: build optimized pool and factory WASM files
-optimize:
-	rustup run $(RUST_VERSION) $(STELLAR) contract build --package liquidity-pool --optimize
-	@echo "optimized: $(WASM)"
-	$(MAKE) optimize-pool-factory
+## optimize: build optimized pool and router WASM files
+optimize: optimize-pool optimize-router
 
-## optimize-pool-factory: build optimized factory WASM
-optimize-pool-factory:
-	rustup run $(RUST_VERSION) $(STELLAR) contract build --package pool-factory --optimize
-	@echo "optimized: $(POOL_FACTORY_WASM)"
+## optimize-pool: build optimized Spreadless pool WASM
+optimize-pool:
+	rustup run $(RUST_VERSION) $(STELLAR) contract build --package spreadless-pool --optimize
+	@echo "optimized: $(POOL_WASM)"
+
+## optimize-router: build optimized Spreadless router WASM
+optimize-router:
+	rustup run $(RUST_VERSION) $(STELLAR) contract build --package spreadless-router --optimize
+	@echo "optimized: $(ROUTER_WASM)"
 
 ## optimize-test-token: compile and optimize the open-mint test token
 optimize-test-token:
 	rustup run $(RUST_VERSION) $(STELLAR) contract build --package test-token --optimize
 	@echo "optimized: $(TEST_TOKEN_WASM)"
 
-## deploy: deploy a factory and create a 2-token pool (set OWNER, TOKEN_A, TOKEN_B)
+## deploy: deploy a router and create a 2-token pool (set OWNER, TOKEN_A, TOKEN_B)
 deploy: optimize
 	@test -n "$(OWNER)"   || { echo "ERROR: set OWNER=<G... or C... address>";   exit 1; }
 	@test -n "$(TOKEN_A)" || { echo "ERROR: set TOKEN_A=<token contract address>"; exit 1; }
 	@test -n "$(TOKEN_B)" || { echo "ERROR: set TOKEN_B=<token contract address>"; exit 1; }
-	@pool_hash=`$(STELLAR) contract upload --wasm $(WASM) --source $(SOURCE) --network $(NETWORK)`; \
-	factory=`$(STELLAR) contract deploy --wasm $(POOL_FACTORY_WASM) --source $(SOURCE) --network $(NETWORK) -- --owner $(OWNER) --pool_wasm_hash $$pool_hash --default_protocol_fee $(PROTOCOL_FEE) --default_protocol_beneficiary $(BENEFICIARY)`; \
-	pool=`$(STELLAR) contract invoke --id $$factory --source $(SOURCE) --network $(NETWORK) -- create_pool --creator $(OWNER) --tokens '["$(TOKEN_A)","$(TOKEN_B)"]' --amp_factor $(AMP_FACTOR) --amp_control $(AMP_CONTROL) --swap_fee $(SWAP_FEE) --max_caps '[$(MAX_CAP),$(MAX_CAP)]' --lp_max_supply $(LP_MAX_SUPPLY) --lp_name '$(LP_NAME)' --lp_symbol '$(LP_SYMBOL)' | tr -d '"'`; \
-	echo "factory: $$factory"; \
+	@pool_hash=`$(STELLAR) contract upload --wasm $(POOL_WASM) --source $(SOURCE) --network $(NETWORK)`; \
+	router=`$(STELLAR) contract deploy --wasm $(ROUTER_WASM) --source $(SOURCE) --network $(NETWORK) -- --owner $(OWNER) --pool_wasm_hash $$pool_hash --default_protocol_fee $(PROTOCOL_FEE) --default_protocol_beneficiary $(BENEFICIARY)`; \
+	pool=`$(STELLAR) contract invoke --id $$router --source $(SOURCE) --network $(NETWORK) -- create_pool --creator $(OWNER) --tokens '["$(TOKEN_A)","$(TOKEN_B)"]' --amp_factor $(AMP_FACTOR) --amp_control $(AMP_CONTROL) --swap_fee $(SWAP_FEE) --max_caps '[$(MAX_CAP),$(MAX_CAP)]' --lp_max_supply $(LP_MAX_SUPPLY) --lp_name '$(LP_NAME)' --lp_symbol '$(LP_SYMBOL)' | tr -d '"'`; \
+	echo "router: $$router"; \
 	echo "pool: $$pool"
 
 ## deploy-testnet: deploy testnet open-mint tokens and a pool; save addresses

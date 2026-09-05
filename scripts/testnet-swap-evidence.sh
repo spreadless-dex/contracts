@@ -36,14 +36,14 @@ require_cmd "$STELLAR"
 require_cmd jq
 require_cmd awk
 
-POOL=$(jq -r '.contracts.liquidity_pool.address' "$DEPLOYMENTS_FILE")
-SWAP_FEE=$(jq -r '.contracts.liquidity_pool.swap_fee' "$DEPLOYMENTS_FILE")
-AMP=$(jq -r '.contracts.liquidity_pool.amp_factor' "$DEPLOYMENTS_FILE")
+POOL=$(jq -r '(.contracts.pool // .contracts.liquidity_pool).address' "$DEPLOYMENTS_FILE")
+SWAP_FEE=$(jq -r '(.contracts.pool // .contracts.liquidity_pool).swap_fee' "$DEPLOYMENTS_FILE")
+AMP=$(jq -r '(.contracts.pool // .contracts.liquidity_pool).amp_factor' "$DEPLOYMENTS_FILE")
 USER=$("$STELLAR" keys address "$SOURCE" 2>/dev/null || jq -r '.deployer' "$DEPLOYMENTS_FILE")
 
 token_addr() { # label -> pool token contract address
   jq -r --arg l "$1" \
-    '.contracts.liquidity_pool | .tokens[(.token_labels | index($l))]' \
+    '(.contracts.pool // .contracts.liquidity_pool) | .tokens[(.token_labels | index($l))]' \
     "$DEPLOYMENTS_FILE"
 }
 

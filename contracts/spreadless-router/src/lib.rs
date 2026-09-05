@@ -7,7 +7,7 @@ mod storage;
 
 pub use contract::{
     DefaultBeneficiaryUpdated, DefaultProtocolFeeUpdated, PoolAmpRampSet, PoolBeneficiaryUpdated,
-    PoolCreated, PoolFactory, PoolFactoryClient, PoolPauseUpdated, PoolProtocolFeeUpdated,
-    PoolWasmUpdated,
+    PoolCreated, PoolPauseUpdated, PoolProtocolFeeUpdated, PoolWasmUpdated, SpreadlessRouter,
+    SpreadlessRouterClient,
 };
-pub use interface::AmpControl;
+pub use interface::{AmpControl, SwapHop};

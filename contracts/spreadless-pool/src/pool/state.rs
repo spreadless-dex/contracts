@@ -4,6 +4,7 @@
 use soroban_sdk::{contracttype, Address, Env, Vec};
 
 use crate::math::MAX_TOKENS;
+use spreadless_pool_interface::AmpControl;
 
 use super::normalized::NormalizedAmounts;
 use super::scaling::{from_internal, from_internal_up, to_internal};
@@ -17,15 +18,6 @@ const INSTANCE_LIFETIME_THRESHOLD: u32 = INSTANCE_BUMP_AMOUNT - DAY_IN_LEDGERS;
 #[contracttype]
 pub enum DataKey {
     Pool,
-}
-
-/// Determines whether the pool's amplification factor is permanently fixed or
-/// delegated to the immutable protocol controller.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[contracttype]
-pub enum AmpControl {
-    Locked,
-    ProtocolManaged,
 }
 
 /// One token in the pool. `reserve` and `max_cap` are stored already normalized

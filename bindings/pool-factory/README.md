@@ -1,15 +1,15 @@
-# pool-factory TypeScript binding
+# Spreadless router TypeScript binding
 
-Typed Soroban RPC client for the Spreadless pool factory.
+Typed Soroban RPC client for the Spreadless router.
 
 ## Authority model
 
-The factory owner is Spreadless protocol governance. Ownership uses
+The router owner is Spreadless protocol governance. Ownership uses
 OpenZeppelin Stellar's two-step transfer flow and may be transferred to a
 multisig contract address. Renunciation is disabled.
 
-Every pool created by this factory permanently records the factory contract
-address as its protocol controller. Transferring factory ownership therefore
+Every pool created by this router permanently records the router contract
+address as its protocol controller. Transferring router ownership therefore
 transfers protocol control over all registered pools without rewriting each
 pool.
 
@@ -35,7 +35,7 @@ future pools only and never changes an existing pool.
 ## Pool creation
 
 ```ts
-const tx = await factory.create_pool({
+const tx = await router.create_pool({
   creator,
   tokens,
   amp_factor: 100,
@@ -55,12 +55,35 @@ beneficiary.
 The irreversible amplification modes are:
 
 - `Locked`: the initial amplification factor can never change.
-- `ProtocolManaged`: factory governance may apply an immediate change or
+- `ProtocolManaged`: router governance may apply an immediate change or
   start a linear ramp.
+
+## Routed swaps
+
+An exact-input swap can cross any number of registered pools atomically:
+
+```ts
+const tx = await router.swap_exact_in({
+  to: trader,
+  token_in: tokenA,
+  path: [
+    { pool_id: 0, token_out: tokenB },
+    { pool_id: 1, token_out: tokenC },
+  ],
+  amount_in: 1_000_000n,
+  min_out: 990_000n,
+});
+```
+
+Each hop spends the exact amount returned by the previous hop. `min_out`
+applies to the final hop, and any failure reverts the whole route. Every
+`pool_id` must belong to this router, and the path must contain at least one
+hop. The trader authorizes the routed call; intermediate tokens pass through
+the trader's balance, so the router never takes custody.
 
 ## Governance methods
 
-Factory defaults and future pool code:
+Router defaults and future pool code:
 
 - `set_pool_wasm_hash({ new_hash })`
 - `set_default_protocol_fee({ new_fee })`
@@ -74,8 +97,8 @@ Registered-pool proxies:
 - `pause_pool({ pool_id })`
 - `unpause_pool({ pool_id })`
 
-All require factory-owner authorization. Pool proxies reject targets outside
-the factory registry. Pool-specific settings are independent of factory
+All require router-owner authorization. Pool proxies reject targets outside
+the router registry. Pool-specific settings are independent of router
 defaults.
 
 ## Registry

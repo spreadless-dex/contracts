@@ -1,20 +1,25 @@
 use soroban_sdk::{contracttrait, contracttype, Address, BytesN, Env, String, Vec};
+pub use spreadless_pool_interface::AmpControl;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+/// One leg of an exact-input routed swap.
+///
+/// `token_in` is implicit: it is the router's `token_in` for the first hop and
+/// the previous hop's `token_out` thereafter.
+#[derive(Clone, Debug, Eq, PartialEq)]
 #[contracttype]
-pub enum AmpControl {
-    Locked,
-    ProtocolManaged,
+pub struct SwapHop {
+    pub pool_id: u32,
+    pub token_out: Address,
 }
 
 #[contracttrait]
-pub trait PoolFactoryInterface {
+pub trait SpreadlessRouterInterface {
     /// Deploy and register a pool owned by `creator` and permanently controlled
-    /// by this factory for protocol administration.
+    /// by this router for protocol administration.
     ///
     /// Creation is permissionless, but `creator` must authorize the call. The
-    /// factory deliberately allows duplicate token baskets and configurations.
-    /// The current factory protocol-fee defaults are copied into the pool.
+    /// router deliberately allows duplicate token baskets and configurations.
+    /// The current router protocol-fee defaults are copied into the pool.
     #[allow(clippy::too_many_arguments)]
     fn create_pool(
         e: Env,
@@ -28,6 +33,23 @@ pub trait PoolFactoryInterface {
         lp_name: String,
         lp_symbol: String,
     ) -> Address;
+
+    /// Run an exact-input swap through one or more registered pools.
+    ///
+    /// Every hop sends its output to `to`, then the next hop spends exactly
+    /// that returned amount. Only the final hop applies `min_out`; if any hop
+    /// fails, the entire route is reverted atomically. Returns the final output.
+    ///
+    /// Reverts with `EmptySwapPath` when `path` has no hops and
+    /// `PoolNotRegistered` when any hop references an unknown pool ID.
+    fn swap_exact_in(
+        e: Env,
+        to: Address,
+        token_in: Address,
+        path: Vec<SwapHop>,
+        amount_in: i128,
+        min_out: i128,
+    ) -> i128;
 
     /// ID that will be assigned to the next created pool.
     fn next_pool_id(e: Env) -> u32;

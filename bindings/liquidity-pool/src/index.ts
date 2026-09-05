@@ -34,12 +34,6 @@ if (typeof window !== "undefined") {
 
 
 /**
- * Determines whether the pool's amplification factor is permanently fixed or
- * delegated to the immutable protocol controller.
- */
-export type AmpControl = {tag: "Locked", values: void} | {tag: "ProtocolManaged", values: void};
-
-/**
  * Errors returned by the liquidity pool. Surfaced to clients via
  * `panic_with_error!`, so each maps to a stable numeric code.
  */
@@ -71,6 +65,12 @@ export const Errors = {
 
 
 
+
+/**
+ * Determines whether the pool's amplification factor is permanently fixed or
+ * delegated to the immutable protocol controller.
+ */
+export type AmpControl = {tag: "Locked", values: void} | {tag: "ProtocolManaged", values: void};
 
 export const RoleTransferError = {
   2200: {message:"NoPendingTransfer"},
@@ -180,9 +180,9 @@ export interface Client {
   /**
    * Construct and simulate a name transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
    * Returns the name for this token.
-   * 
+   *
    * # Arguments
-   * 
+   *
    * * `e` - Access to Soroban environment.
    */
   name: (options?: MethodOptions) => Promise<AssembledTransaction<string>>
@@ -202,9 +202,9 @@ export interface Client {
   /**
    * Construct and simulate a symbol transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
    * Returns the symbol for this token.
-   * 
+   *
    * # Arguments
-   * 
+   *
    * * `e` - Access to Soroban environment.
    */
   symbol: (options?: MethodOptions) => Promise<AssembledTransaction<string>>
@@ -214,25 +214,25 @@ export interface Client {
    * Sets the amount of tokens a `spender` is allowed to spend on behalf of
    * an `owner`. Overrides any existing allowance set between `spender` and
    * `owner`.
-   * 
+   *
    * # Arguments
-   * 
+   *
    * * `e` - Access to Soroban environment.
    * * `owner` - The address holding the tokens.
    * * `spender` - The address authorized to spend the tokens.
    * * `amount` - The amount of tokens made available to `spender`.
    * * `live_until_ledger` - The ledger number at which the allowance
    * expires.
-   * 
+   *
    * # Errors
-   * 
+   *
    * * [`FungibleTokenError::InvalidLiveUntilLedger`] - Occurs when
    * attempting to set `live_until_ledger` that is less than the current
    * ledger number and greater than `0`.
    * * [`FungibleTokenError::LessThanZero`] - Occurs when `amount < 0`.
-   * 
+   *
    * # Events
-   * 
+   *
    * * topics - `["approve", from: Address, spender: Address]`
    * * data - `[amount: i128, live_until_ledger: u32]`
    */
@@ -241,9 +241,9 @@ export interface Client {
   /**
    * Construct and simulate a balance transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
    * Returns the amount of tokens held by `account`.
-   * 
+   *
    * # Arguments
-   * 
+   *
    * * `e` - Access to the Soroban environment.
    * * `account` - The address for which the balance is being queried.
    */
@@ -270,9 +270,9 @@ export interface Client {
   /**
    * Construct and simulate a decimals transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
    * Returns the number of decimals used to represent amounts of this token.
-   * 
+   *
    * # Arguments
-   * 
+   *
    * * `e` - Access to Soroban environment.
    */
   decimals: (options?: MethodOptions) => Promise<AssembledTransaction<u32>>
@@ -280,22 +280,22 @@ export interface Client {
   /**
    * Construct and simulate a transfer transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
    * Transfers `amount` of tokens from `from` to `to`.
-   * 
+   *
    * # Arguments
-   * 
+   *
    * * `e` - Access to Soroban environment.
    * * `from` - The address holding the tokens.
    * * `to` - The address receiving the transferred tokens.
    * * `amount` - The amount of tokens to be transferred.
-   * 
+   *
    * # Errors
-   * 
+   *
    * * [`FungibleTokenError::InsufficientBalance`] - When attempting to
    * transfer more tokens than `from` current balance.
    * * [`FungibleTokenError::LessThanZero`] - When `amount < 0`.
-   * 
+   *
    * # Events
-   * 
+   *
    * * topics - `["transfer", from: Address, to: Address]`
    * * data - `[to_muxed_id: Option<u64>, amount: i128]`
    */
@@ -312,9 +312,9 @@ export interface Client {
    * Construct and simulate a allowance transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
    * Returns the amount of tokens a `spender` is allowed to spend on behalf
    * of an `owner`.
-   * 
+   *
    * # Arguments
-   * 
+   *
    * * `e` - Access to Soroban environment.
    * * `owner` - The address holding the tokens.
    * * `spender` - The address authorized to spend the tokens.
@@ -330,9 +330,9 @@ export interface Client {
    * Construct and simulate a get_owner transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
    * Returns `Some(Address)` if ownership is set, or `None` if ownership has
    * been renounced.
-   * 
+   *
    * # Arguments
-   * 
+   *
    * * `e` - Access to the Soroban environment.
    */
   get_owner: (options?: MethodOptions) => Promise<AssembledTransaction<Option<string>>>
@@ -371,9 +371,9 @@ export interface Client {
   /**
    * Construct and simulate a total_supply transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
    * Returns the total amount of tokens in circulation.
-   * 
+   *
    * # Arguments
-   * 
+   *
    * * `e` - Access to the Soroban environment.
    */
   total_supply: (options?: MethodOptions) => Promise<AssembledTransaction<i128>>
@@ -399,26 +399,26 @@ export interface Client {
    * Transfers `amount` of tokens from `from` to `to` using the
    * allowance mechanism. `amount` is then deducted from `spender`
    * allowance.
-   * 
+   *
    * # Arguments
-   * 
+   *
    * * `e` - Access to Soroban environment.
    * * `spender` - The address authorizing the transfer, and having its
    * allowance consumed during the transfer.
    * * `from` - The address holding the tokens which will be transferred.
    * * `to` - The address receiving the transferred tokens.
    * * `amount` - The amount of tokens to be transferred.
-   * 
+   *
    * # Errors
-   * 
+   *
    * * [`FungibleTokenError::InsufficientBalance`] - When attempting to
    * transfer more tokens than `from` current balance.
    * * [`FungibleTokenError::LessThanZero`] - When `amount < 0`.
    * * [`FungibleTokenError::InsufficientAllowance`] - When attempting to
    * transfer more tokens than `spender` current allowance.
-   * 
+   *
    * # Events
-   * 
+   *
    * * topics - `["transfer", from: Address, to: Address]`
    * * data - `[amount: i128]`
    */
@@ -466,18 +466,18 @@ export interface Client {
   /**
    * Construct and simulate a accept_ownership transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
    * Accepts a pending ownership transfer.
-   * 
+   *
    * # Arguments
-   * 
+   *
    * * `e` - Access to the Soroban environment.
-   * 
+   *
    * # Errors
-   * 
+   *
    * * [`crate::role_transfer::RoleTransferError::NoPendingTransfer`] - If
    * there is no pending transfer to accept.
-   * 
+   *
    * # Events
-   * 
+   *
    * * topics - `["ownership_transfer_completed"]`
    * * data - `[new_owner: Address]`
    */
@@ -507,19 +507,19 @@ export interface Client {
   /**
    * Construct and simulate a transfer_ownership transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
    * Initiates a 2-step ownership transfer to a new address.
-   * 
+   *
    * Requires authorization from the current owner. The new owner must later
    * call `accept_ownership()` to complete the transfer.
-   * 
+   *
    * # Arguments
-   * 
+   *
    * * `e` - Access to the Soroban environment.
    * * `new_owner` - The proposed new owner.
    * * `live_until_ledger` - Ledger number until which the new owner can
    * accept. A value of `0` cancels any pending transfer.
-   * 
+   *
    * # Errors
-   * 
+   *
    * * [`OwnableError::OwnerNotSet`] - If the owner is not set.
    * * [`crate::role_transfer::RoleTransferError::NoPendingTransfer`] - If
    * trying to cancel a transfer that doesn't exist.
@@ -528,9 +528,9 @@ export interface Client {
    * * [`crate::role_transfer::RoleTransferError::InvalidPendingAccount`] -
    * If the specified pending account is not the same as the provided `new`
    * address.
-   * 
+   *
    * # Notes
-   * 
+   *
    * * Authorization for the current owner is required.
    */
   transfer_ownership: ({new_owner, live_until_ledger}: {new_owner: string, live_until_ledger: u32}, options?: MethodOptions) => Promise<AssembledTransaction<null>>
@@ -569,8 +569,7 @@ export class Client extends ContractClient {
   }
   constructor(public readonly options: ContractClientOptions) {
     super(
-      new ContractSpec([ "AAAAAgAAAHpEZXRlcm1pbmVzIHdoZXRoZXIgdGhlIHBvb2wncyBhbXBsaWZpY2F0aW9uIGZhY3RvciBpcyBwZXJtYW5lbnRseSBmaXhlZCBvcgpkZWxlZ2F0ZWQgdG8gdGhlIGltbXV0YWJsZSBwcm90b2NvbCBjb250cm9sbGVyLgAAAAAAAAAAAApBbXBDb250cm9sAAAAAAACAAAAAAAAAAAAAAAGTG9ja2VkAAAAAAAAAAAAAAAAAA9Qcm90b2NvbE1hbmFnZWQA",
-        "AAAABAAAAHpFcnJvcnMgcmV0dXJuZWQgYnkgdGhlIGxpcXVpZGl0eSBwb29sLiBTdXJmYWNlZCB0byBjbGllbnRzIHZpYQpgcGFuaWNfd2l0aF9lcnJvciFgLCBzbyBlYWNoIG1hcHMgdG8gYSBzdGFibGUgbnVtZXJpYyBjb2RlLgAAAAAAAAAAAAVFcnJvcgAAAAAAABYAAAAAAAAAEUludmFsaWRUb2tlbkNvdW50AAAAAAAAAQAAAAAAAAAPVG9rZW5zTm90U29ydGVkAAAAAAIAAAAAAAAAEkNhcHNMZW5ndGhNaXNtYXRjaAAAAAAAAwAAAAAAAAAQSW52YWxpZEFtcEZhY3RvcgAAAAQAAAAAAAAADkludmFsaWRTd2FwRmVlAAAAAAAFAAAAAAAAABJJbnZhbGlkUHJvdG9jb2xGZWUAAAAAAAYAAAAAAAAAD0ludmFsaWREZWNpbWFscwAAAAAHAAAAAAAAAApJbnZhbGlkQ2FwAAAAAAAIAAAAAAAAABVBbW91bnRzTGVuZ3RoTWlzbWF0Y2gAAAAAAAAJAAAAAAAAAA1JbnZhbGlkQW1vdW50AAAAAAAACgAAAAAAAAALWmVyb0RlcG9zaXQAAAAACwAAAAAAAAATRmlyc3REZXBvc2l0Tm90RnVsbAAAAAAMAAAAAAAAAAlNYXRoRXJyb3IAAAAAAAANAAAAAAAAABBTbGlwcGFnZUV4Y2VlZGVkAAAADgAAAAAAAAALQ2FwRXhjZWVkZWQAAAAADwAAAAAAAAAPQmFsYW5jZVRvb0xhcmdlAAAAABAAAAAAAAAADFVua25vd25Ub2tlbgAAABEAAAAAAAAACVNhbWVUb2tlbgAAAAAAABIAAAAAAAAAFlRyYW5zZmVyQW1vdW50TWlzbWF0Y2gAAAAAABMAAAAAAAAAFERpcmVjdExwQnVybkRpc2FibGVkAAAAFAAAAAAAAAAQQW1wQ29udHJvbExvY2tlZAAAABUAAAAAAAAAHU93bmVyc2hpcFJlbnVuY2lhdGlvbkRpc2FibGVkAAAAAAAAFg==",
+      new ContractSpec([ "AAAABAAAAHpFcnJvcnMgcmV0dXJuZWQgYnkgdGhlIGxpcXVpZGl0eSBwb29sLiBTdXJmYWNlZCB0byBjbGllbnRzIHZpYQpgcGFuaWNfd2l0aF9lcnJvciFgLCBzbyBlYWNoIG1hcHMgdG8gYSBzdGFibGUgbnVtZXJpYyBjb2RlLgAAAAAAAAAAAAVFcnJvcgAAAAAAABYAAAAAAAAAEUludmFsaWRUb2tlbkNvdW50AAAAAAAAAQAAAAAAAAAPVG9rZW5zTm90U29ydGVkAAAAAAIAAAAAAAAAEkNhcHNMZW5ndGhNaXNtYXRjaAAAAAAAAwAAAAAAAAAQSW52YWxpZEFtcEZhY3RvcgAAAAQAAAAAAAAADkludmFsaWRTd2FwRmVlAAAAAAAFAAAAAAAAABJJbnZhbGlkUHJvdG9jb2xGZWUAAAAAAAYAAAAAAAAAD0ludmFsaWREZWNpbWFscwAAAAAHAAAAAAAAAApJbnZhbGlkQ2FwAAAAAAAIAAAAAAAAABVBbW91bnRzTGVuZ3RoTWlzbWF0Y2gAAAAAAAAJAAAAAAAAAA1JbnZhbGlkQW1vdW50AAAAAAAACgAAAAAAAAALWmVyb0RlcG9zaXQAAAAACwAAAAAAAAATRmlyc3REZXBvc2l0Tm90RnVsbAAAAAAMAAAAAAAAAAlNYXRoRXJyb3IAAAAAAAANAAAAAAAAABBTbGlwcGFnZUV4Y2VlZGVkAAAADgAAAAAAAAALQ2FwRXhjZWVkZWQAAAAADwAAAAAAAAAPQmFsYW5jZVRvb0xhcmdlAAAAABAAAAAAAAAADFVua25vd25Ub2tlbgAAABEAAAAAAAAACVNhbWVUb2tlbgAAAAAAABIAAAAAAAAAFlRyYW5zZmVyQW1vdW50TWlzbWF0Y2gAAAAAABMAAAAAAAAAFERpcmVjdExwQnVybkRpc2FibGVkAAAAFAAAAAAAAAAQQW1wQ29udHJvbExvY2tlZAAAABUAAAAAAAAAHU93bmVyc2hpcFJlbnVuY2lhdGlvbkRpc2FibGVkAAAAAAAAFg==",
         "AAAABQAAADRTd2FwLCBleGFjdC1pbiBvciBleGFjdC1vdXQuIFRvcGljczogYCgic3dhcCIsIHRvKWAuAAAAAAAAAARTd2FwAAAAAQAAAARzd2FwAAAABQAAAAAAAAACdG8AAAAAABMAAAABAAAAAAAAAAh0b2tlbl9pbgAAABMAAAAAAAAAAAAAAAl0b2tlbl9vdXQAAAAAAAATAAAAAAAAAAAAAAAJYW1vdW50X2luAAAAAAAACwAAAAAAAAAAAAAACmFtb3VudF9vdXQAAAAAAAsAAAAAAAAAAg==",
         "AAAABQAAACtMaXF1aWRpdHkgYWRkZWQuIFRvcGljczogYCgiZGVwb3NpdCIsIHRvKWAuAAAAAAAAAAAHRGVwb3NpdAAAAAABAAAAB2RlcG9zaXQAAAAABAAAAAAAAAACdG8AAAAAABMAAAABAAAAAAAAAAphbW91bnRzX2luAAAAAAPqAAAACwAAAAAAAAAAAAAACWxwX21pbnRlZAAAAAAAAAsAAAAAAAAAP0xQIG1pbnRlZCB0byB0aGUgYmVuZWZpY2lhcnkgYXMgdGhlIHByb3RvY29sJ3MgY3V0ICgwIGlmIG5vbmUpLgAAAAALcHJvdG9jb2xfbHAAAAAACwAAAAAAAAAC",
         "AAAABQAAADRQcm9wb3J0aW9uYWwgd2l0aGRyYXdhbC4gVG9waWNzOiBgKCJ3aXRoZHJhdyIsIHRvKWAuAAAAAAAAAAhXaXRoZHJhdwAAAAEAAAAId2l0aGRyYXcAAAADAAAAAAAAAAJ0bwAAAAAAEwAAAAEAAAAAAAAACWxwX2J1cm5lZAAAAAAAAAsAAAAAAAAAAAAAAAthbW91bnRzX291dAAAAAPqAAAACwAAAAAAAAAC",
@@ -587,11 +586,11 @@ export class Client extends ContractClient {
         "AAAAAAAAAHxSZXR1cm5zIHRoZSBudW1iZXIgb2YgZGVjaW1hbHMgdXNlZCB0byByZXByZXNlbnQgYW1vdW50cyBvZiB0aGlzIHRva2VuLgoKIyBBcmd1bWVudHMKCiogYGVgIC0gQWNjZXNzIHRvIFNvcm9iYW4gZW52aXJvbm1lbnQuAAAACGRlY2ltYWxzAAAAAAAAAAEAAAAE",
         "AAAAAAAAAi5UcmFuc2ZlcnMgYGFtb3VudGAgb2YgdG9rZW5zIGZyb20gYGZyb21gIHRvIGB0b2AuCgojIEFyZ3VtZW50cwoKKiBgZWAgLSBBY2Nlc3MgdG8gU29yb2JhbiBlbnZpcm9ubWVudC4KKiBgZnJvbWAgLSBUaGUgYWRkcmVzcyBob2xkaW5nIHRoZSB0b2tlbnMuCiogYHRvYCAtIFRoZSBhZGRyZXNzIHJlY2VpdmluZyB0aGUgdHJhbnNmZXJyZWQgdG9rZW5zLgoqIGBhbW91bnRgIC0gVGhlIGFtb3VudCBvZiB0b2tlbnMgdG8gYmUgdHJhbnNmZXJyZWQuCgojIEVycm9ycwoKKiBbYEZ1bmdpYmxlVG9rZW5FcnJvcjo6SW5zdWZmaWNpZW50QmFsYW5jZWBdIC0gV2hlbiBhdHRlbXB0aW5nIHRvCnRyYW5zZmVyIG1vcmUgdG9rZW5zIHRoYW4gYGZyb21gIGN1cnJlbnQgYmFsYW5jZS4KKiBbYEZ1bmdpYmxlVG9rZW5FcnJvcjo6TGVzc1RoYW5aZXJvYF0gLSBXaGVuIGBhbW91bnQgPCAwYC4KCiMgRXZlbnRzCgoqIHRvcGljcyAtIGBbInRyYW5zZmVyIiwgZnJvbTogQWRkcmVzcywgdG86IEFkZHJlc3NdYAoqIGRhdGEgLSBgW3RvX211eGVkX2lkOiBPcHRpb248dTY0PiwgYW1vdW50OiBpMTI4XWAAAAAAAAh0cmFuc2ZlcgAAAAMAAAAAAAAABGZyb20AAAATAAAAAAAAAAJ0bwAAAAAAFAAAAAAAAAAGYW1vdW50AAAAAAALAAAAAA==",
         "AAAAAAAAAH1CdXJuIGBscF9hbW91bnRgIHNoYXJlcyBhbmQgd2l0aGRyYXcgYSBwcm9wb3J0aW9uYWwgc2xpY2Ugb2YgZXZlcnkKcmVzZXJ2ZS4gUmV0dXJucyB0aGUgcmF3IGFtb3VudHMgcGFpZCBvdXQsIGluIHRva2VuIG9yZGVyLgAAAAAAAAh3aXRoZHJhdwAAAAMAAAAAAAAAAnRvAAAAAAATAAAAAAAAAAlscF9hbW91bnQAAAAAAAALAAAAAAAAAA9taW5fYW1vdW50c19vdXQAAAAD6gAAAAsAAAABAAAD6gAAAAs=",
+        "AAAABQAAAD5TaW5nbGUtdG9rZW4gd2l0aGRyYXdhbC4gVG9waWNzOiBgKCJ3aXRoZHJhd19vbmVfdG9rZW4iLCB0bylgLgAAAAAAAAAAABBXaXRoZHJhd09uZVRva2VuAAAAAQAAABJ3aXRoZHJhd19vbmVfdG9rZW4AAAAAAAQAAAAAAAAAAnRvAAAAAAATAAAAAQAAAAAAAAAJdG9rZW5fb3V0AAAAAAAAEwAAAAAAAAAAAAAACWxwX2J1cm5lZAAAAAAAAAsAAAAAAAAAAAAAAAphbW91bnRfb3V0AAAAAAALAAAAAAAAAAI=",
         "AAAAAAAAAPBSZXR1cm5zIHRoZSBhbW91bnQgb2YgdG9rZW5zIGEgYHNwZW5kZXJgIGlzIGFsbG93ZWQgdG8gc3BlbmQgb24gYmVoYWxmCm9mIGFuIGBvd25lcmAuCgojIEFyZ3VtZW50cwoKKiBgZWAgLSBBY2Nlc3MgdG8gU29yb2JhbiBlbnZpcm9ubWVudC4KKiBgb3duZXJgIC0gVGhlIGFkZHJlc3MgaG9sZGluZyB0aGUgdG9rZW5zLgoqIGBzcGVuZGVyYCAtIFRoZSBhZGRyZXNzIGF1dGhvcml6ZWQgdG8gc3BlbmQgdGhlIHRva2Vucy4AAAAJYWxsb3dhbmNlAAAAAAAAAgAAAAAAAAAFb3duZXIAAAAAAAATAAAAAAAAAAdzcGVuZGVyAAAAABMAAAABAAAACw==",
         "AAAAAAAAAAAAAAAJYnVybl9mcm9tAAAAAAAAAwAAAAAAAAAHc3BlbmRlcgAAAAATAAAAAAAAAARmcm9tAAAAEwAAAAAAAAAGYW1vdW50AAAAAAALAAAAAA==",
         "AAAAAAAAAJBSZXR1cm5zIGBTb21lKEFkZHJlc3MpYCBpZiBvd25lcnNoaXAgaXMgc2V0LCBvciBgTm9uZWAgaWYgb3duZXJzaGlwIGhhcwpiZWVuIHJlbm91bmNlZC4KCiMgQXJndW1lbnRzCgoqIGBlYCAtIEFjY2VzcyB0byB0aGUgU29yb2JhbiBlbnZpcm9ubWVudC4AAAAJZ2V0X293bmVyAAAAAAAAAAAAAAEAAAPoAAAAEw==",
         "AAAAAAAAACtUaGUgcG9vbCdzIHRva2VuIGFkZHJlc3NlcywgaW4gdG9rZW4gb3JkZXIuAAAAAApnZXRfdG9rZW5zAAAAAAAAAAAAAQAAA+oAAAAT",
-        "AAAABQAAAD5TaW5nbGUtdG9rZW4gd2l0aGRyYXdhbC4gVG9waWNzOiBgKCJ3aXRoZHJhd19vbmVfdG9rZW4iLCB0bylgLgAAAAAAAAAAABBXaXRoZHJhd09uZVRva2VuAAAAAQAAABJ3aXRoZHJhd19vbmVfdG9rZW4AAAAAAAQAAAAAAAAAAnRvAAAAAAATAAAAAQAAAAAAAAAJdG9rZW5fb3V0AAAAAAAAEwAAAAAAAAAAAAAACWxwX2J1cm5lZAAAAAAAAAsAAAAAAAAAAAAAAAphbW91bnRfb3V0AAAAAAALAAAAAAAAAAI=",
         "AAAAAAAAADRDdXJyZW50IHJlc2VydmVzIGluIHJhdyB0b2tlbiB1bml0cywgaW4gdG9rZW4gb3JkZXIuAAAADGdldF9yZXNlcnZlcwAAAAAAAAABAAAD6gAAAAs=",
         "AAAAAAAAAAAAAAAMZ2V0X3N3YXBfZmVlAAAAAAAAAAEAAAAG",
         "AAAAAAAAANZTdGFydCAob3IgcmVwbGFjZSkgYSBsaW5lYXIgYW1wbGlmaWNhdGlvbiByYW1wIHRvd2FyZCBgdGFyZ2V0X2ZhY3RvcmAKb3ZlciBgZHVyYXRpb25gIHNlY29uZHMuIFRoZSByYW1wIGJlZ2lucyBmcm9tIHRoZSBjdXJyZW50IGludGVycG9sYXRlZApmYWN0b3IsIHNvIHRoZXJlIGlzIG5vIGRpc2NvbnRpbnVpdHkuIGBkdXJhdGlvbiA9PSAwYCBhcHBsaWVzIGl0IGF0IG9uY2UuAAAAAAAMc2V0X2FtcF9yYW1wAAAAAgAAAAAAAAANdGFyZ2V0X2ZhY3RvcgAAAAAAAAQAAAAAAAAACGR1cmF0aW9uAAAABgAAAAA=",
@@ -616,6 +615,7 @@ export class Client extends ContractClient {
         "AAAAAAAAA45Jbml0aWF0ZXMgYSAyLXN0ZXAgb3duZXJzaGlwIHRyYW5zZmVyIHRvIGEgbmV3IGFkZHJlc3MuCgpSZXF1aXJlcyBhdXRob3JpemF0aW9uIGZyb20gdGhlIGN1cnJlbnQgb3duZXIuIFRoZSBuZXcgb3duZXIgbXVzdCBsYXRlcgpjYWxsIGBhY2NlcHRfb3duZXJzaGlwKClgIHRvIGNvbXBsZXRlIHRoZSB0cmFuc2Zlci4KCiMgQXJndW1lbnRzCgoqIGBlYCAtIEFjY2VzcyB0byB0aGUgU29yb2JhbiBlbnZpcm9ubWVudC4KKiBgbmV3X293bmVyYCAtIFRoZSBwcm9wb3NlZCBuZXcgb3duZXIuCiogYGxpdmVfdW50aWxfbGVkZ2VyYCAtIExlZGdlciBudW1iZXIgdW50aWwgd2hpY2ggdGhlIG5ldyBvd25lciBjYW4KYWNjZXB0LiBBIHZhbHVlIG9mIGAwYCBjYW5jZWxzIGFueSBwZW5kaW5nIHRyYW5zZmVyLgoKIyBFcnJvcnMKCiogW2BPd25hYmxlRXJyb3I6Ok93bmVyTm90U2V0YF0gLSBJZiB0aGUgb3duZXIgaXMgbm90IHNldC4KKiBbYGNyYXRlOjpyb2xlX3RyYW5zZmVyOjpSb2xlVHJhbnNmZXJFcnJvcjo6Tm9QZW5kaW5nVHJhbnNmZXJgXSAtIElmCnRyeWluZyB0byBjYW5jZWwgYSB0cmFuc2ZlciB0aGF0IGRvZXNuJ3QgZXhpc3QuCiogW2BjcmF0ZTo6cm9sZV90cmFuc2Zlcjo6Um9sZVRyYW5zZmVyRXJyb3I6OkludmFsaWRMaXZlVW50aWxMZWRnZXJgXSAtCklmIHRoZSBzcGVjaWZpZWQgbGVkZ2VyIGlzIGluIHRoZSBwYXN0LgoqIFtgY3JhdGU6OnJvbGVfdHJhbnNmZXI6OlJvbGVUcmFuc2ZlckVycm9yOjpJbnZhbGlkUGVuZGluZ0FjY291bnRgXSAtCklmIHRoZSBzcGVjaWZpZWQgcGVuZGluZyBhY2NvdW50IGlzIG5vdCB0aGUgc2FtZSBhcyB0aGUgcHJvdmlkZWQgYG5ld2AKYWRkcmVzcy4KCiMgTm90ZXMKCiogQXV0aG9yaXphdGlvbiBmb3IgdGhlIGN1cnJlbnQgb3duZXIgaXMgcmVxdWlyZWQuAAAAAAASdHJhbnNmZXJfb3duZXJzaGlwAAAAAAACAAAAAAAAAAluZXdfb3duZXIAAAAAAAATAAAAAAAAABFsaXZlX3VudGlsX2xlZGdlcgAAAAAAAAQAAAAA",
         "AAAAAAAAAR1CdXJuIGBscF9hbW91bnRgIHNoYXJlcyBhbmQgd2l0aGRyYXcgYSBzaW5nbGUgdG9rZW4uIFRoZSBidXJuZWQgc2hhcmUKbG93ZXJzIHRoZSBzdGFibGUgaW52YXJpYW50LCBhbmQgdGhlIHNlbGVjdGVkIHRva2VuIHBheXMgc3dhcCBmZWVzIG9uIHRoZQppbWJhbGFuY2VkIHBvcnRpb24gb2YgdGhlIGV4aXQuIFRoZSBwcm90b2NvbCdzIGN1dCBvZiB0aGF0IGZlZSBpcyBwYWlkIHRvCnRoZSBiZW5lZmljaWFyeSBpbiBgdG9rZW5fb3V0YDsgdGhlIHJlc3Qgc3RheXMgaW4gdGhlIHBvb2wgZm9yIExQcy4AAAAAAAASd2l0aGRyYXdfb25lX3Rva2VuAAAAAAAEAAAAAAAAAAJ0bwAAAAAAEwAAAAAAAAAJbHBfYW1vdW50AAAAAAAACwAAAAAAAAAJdG9rZW5fb3V0AAAAAAAAEwAAAAAAAAAObWluX2Ftb3VudF9vdXQAAAAAAAsAAAABAAAACw==",
         "AAAAAAAAAAAAAAAXZ2V0X3Byb3RvY29sX2NvbnRyb2xsZXIAAAAAAAAAAAEAAAAT",
+        "AAAAAgAAAHpEZXRlcm1pbmVzIHdoZXRoZXIgdGhlIHBvb2wncyBhbXBsaWZpY2F0aW9uIGZhY3RvciBpcyBwZXJtYW5lbnRseSBmaXhlZCBvcgpkZWxlZ2F0ZWQgdG8gdGhlIGltbXV0YWJsZSBwcm90b2NvbCBjb250cm9sbGVyLgAAAAAAAAAAAApBbXBDb250cm9sAAAAAAACAAAAAAAAAAAAAAAGTG9ja2VkAAAAAAAAAAAAAAAAAA9Qcm90b2NvbE1hbmFnZWQA",
         "AAAABAAAAAAAAAAAAAAAEVJvbGVUcmFuc2ZlckVycm9yAAAAAAAABAAAAAAAAAARTm9QZW5kaW5nVHJhbnNmZXIAAAAAAAiYAAAAAAAAABZJbnZhbGlkTGl2ZVVudGlsTGVkZ2VyAAAAAAiZAAAAAAAAABVJbnZhbGlkUGVuZGluZ0FjY291bnQAAAAAAAiaAAAAAAAAAA9UcmFuc2ZlckV4cGlyZWQAAAAImw==",
         "AAAABAAAAAAAAAAAAAAADE93bmFibGVFcnJvcgAAAAMAAAAAAAAAC093bmVyTm90U2V0AAAACDQAAAAAAAAAElRyYW5zZmVySW5Qcm9ncmVzcwAAAAAINQAAAAAAAAAPT3duZXJBbHJlYWR5U2V0AAAACDY=",
         "AAAABQAAADZFdmVudCBlbWl0dGVkIHdoZW4gYW4gb3duZXJzaGlwIHRyYW5zZmVyIGlzIGluaXRpYXRlZC4AAAAAAAAAAAART3duZXJzaGlwVHJhbnNmZXIAAAAAAAABAAAAEm93bmVyc2hpcF90cmFuc2ZlcgAAAAAAAwAAAAAAAAAJb2xkX293bmVyAAAAAAAAEwAAAAAAAAAAAAAACW5ld19vd25lcgAAAAAAABMAAAAAAAAAAAAAABFsaXZlX3VudGlsX2xlZGdlcgAAAAAAAAQAAAAAAAAAAg==",

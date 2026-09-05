@@ -86,14 +86,14 @@ require_cmd rustup
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
-liquidity_pool_wasm="target/${TARGET_TRIPLE}/release/liquidity_pool.wasm"
-pool_factory_wasm="target/${TARGET_TRIPLE}/release/pool_factory.wasm"
+pool_wasm="target/${TARGET_TRIPLE}/release/spreadless_pool.wasm"
+router_wasm="target/${TARGET_TRIPLE}/release/spreadless_router.wasm"
 test_token_wasm="target/${TARGET_TRIPLE}/release/test_token.wasm"
 
 echo "Building contracts..."
 rustup run "$RUST_VERSION" "$STELLAR" contract build --package test-token --optimize
-rustup run "$RUST_VERSION" "$STELLAR" contract build --package liquidity-pool --optimize
-rustup run "$RUST_VERSION" "$STELLAR" contract build --package pool-factory --optimize
+rustup run "$RUST_VERSION" "$STELLAR" contract build --package spreadless-pool --optimize
+rustup run "$RUST_VERSION" "$STELLAR" contract build --package spreadless-router --optimize
 
 owner="${OWNER:-$("$STELLAR" keys public-key "$SOURCE")}"
 beneficiary="${BENEFICIARY:-$owner}"
@@ -123,18 +123,18 @@ fi
 
 read -r token_0 token_1 token_2 < <(sort_contract_addresses "$token_a" "$token_b" "$token_c")
 
-echo "Uploading the liquidity-pool implementation..."
-pool_wasm_hash="$(upload_contract "$liquidity_pool_wasm")"
+echo "Uploading the Spreadless pool implementation..."
+pool_wasm_hash="$(upload_contract "$pool_wasm")"
 
-echo "Deploying pool factory to ${NETWORK}..."
-factory="$(deploy_contract "$pool_factory_wasm" \
+echo "Deploying Spreadless router to ${NETWORK}..."
+router="$(deploy_contract "$router_wasm" \
   --owner "$owner" \
   --pool_wasm_hash "$pool_wasm_hash" \
   --default_protocol_fee "$PROTOCOL_FEE" \
   --default_protocol_beneficiary "$beneficiary")"
 
-echo "Creating liquidity pool through factory..."
-pool="$(invoke_contract "$factory" create_pool \
+echo "Creating pool through router..."
+pool="$(invoke_contract "$router" create_pool \
   --creator "$owner" \
   --tokens "[\"${token_0}\",\"${token_1}\",\"${token_2}\"]" \
   --amp_factor "$AMP_FACTOR" \
@@ -178,7 +178,7 @@ jq -n \
   --arg token_0 "$token_0" \
   --arg token_1 "$token_1" \
   --arg token_2 "$token_2" \
-  --arg factory "$factory" \
+  --arg router "$router" \
   --arg pool_wasm_hash "$pool_wasm_hash" \
   --arg pool "$pool" \
   --arg lp_name "$LP_NAME" \
@@ -200,8 +200,8 @@ jq -n \
     source_identity: $source,
     deployer: $deployer,
     contracts: {
-      pool_factory: {
-        address: $factory,
+      router: {
+        address: $router,
         owner: $deployer,
         pool_wasm_hash: $pool_wasm_hash,
         default_protocol_fee: $protocol_fee,
@@ -237,11 +237,11 @@ jq -n \
           supply_cap: null
         }
       ],
-      liquidity_pool: {
+      pool: {
         label: "3-token-usd-pool",
         address: $pool,
         owner: $deployer,
-        protocol_controller: $factory,
+        protocol_controller: $router,
         amp_control: $amp_control,
         beneficiary: $beneficiary,
         tokens: [$token_0, $token_1, $token_2],
@@ -270,5 +270,5 @@ echo "Saved deployment addresses to ${DEPLOYMENTS_FILE}"
 echo "Token A (${TOKEN_A_SYMBOL}): ${token_a}"
 echo "Token B (${TOKEN_B_SYMBOL}): ${token_b}"
 echo "Token C (${TOKEN_C_SYMBOL}): ${token_c}"
-echo "Factory: ${factory}"
+echo "Router: ${router}"
 echo "Pool: ${pool}"
