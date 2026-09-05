@@ -1,3 +1,5 @@
+#![allow(clippy::too_many_arguments)]
+
 use soroban_sdk::{
     contract, contractclient, contractimpl, contracttrait, contracttype,
     testutils::Address as _,
