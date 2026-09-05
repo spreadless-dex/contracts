@@ -23,12 +23,21 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
+          targets: wasm32v1-none
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
 
       - name: Check formatting
         run: cargo fmt --all --check
+
+      - name: Install Stellar CLI
+        uses: stellar/stellar-cli@v27.0.0
+
+      - name: Build contract WASM for integration tests
+        run: |
+          stellar contract build --package spreadless-pool
+          stellar contract build --package spreadless-router
 
       - name: Clippy (warnings are errors)
         run: cargo clippy --all-targets -- -D warnings
