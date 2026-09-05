@@ -5,7 +5,7 @@
 #   make build      compile the contract to wasm
 #   make bindings   generate TypeScript contract bindings
 #   make optimize   shrink the built wasm (runs build first)
-#   make deploy     deploy + initialize on a network (see "deploy" below)
+#   make deploy     upload pool WASM + deploy the router (see "deploy" below)
 #   make help       list all targets
 #
 # Requirements:
@@ -43,24 +43,14 @@ TEST_TOKEN_WASM := $(RELEASE_DIR)/$(TEST_TOKEN_WASM_NAME).wasm
 POOL_BINDINGS_DIR ?= bindings/liquidity-pool
 ROUTER_BINDINGS_DIR ?= bindings/pool-factory
 
-# --- constructor arguments for `make deploy` (2-token template) ---
-# OWNER/TOKEN_A/TOKEN_B are required; TOKEN_A and TOKEN_B must be SEP-41/SAC
-# token-contract addresses in STRICTLY ASCENDING order (the constructor enforces it).
+# --- router constructor arguments for `make deploy` ---
 OWNER          ?=
-TOKEN_A        ?=
-TOKEN_B        ?=
 BENEFICIARY    ?= $(OWNER)
-AMP_FACTOR     ?= 100
-AMP_CONTROL    ?= ProtocolManaged
-SWAP_FEE       ?= 100000                  # 0.01%  (1e9 == 100%)
-PROTOCOL_FEE   ?= 0                        # cut of the swap fee (1e9 == 100%)
-MAX_CAP        ?= 10000000000000000        # 1e16 raw, per token
-LP_MAX_SUPPLY  ?= 1000000000000000000      # 1e18
-LP_NAME        ?= Spreadless LP
-LP_SYMBOL      ?= SLP
+PROTOCOL_FEE   ?= 330000000                # 33% cut of the swap fee (1e9 == 100%)
+SWAP_FEE       ?= 10000000                 # 1% pool swap fee (1e9 == 100%)
 
 .DEFAULT_GOAL := build
-.PHONY: all build build-pool build-router build-test-token bindings bindings-pool bindings-router optimize optimize-pool optimize-router optimize-test-token deploy deploy-testnet testnet-evidence setup keys fund clean fmt fmt-check lint help
+.PHONY: all build build-pool build-router build-test-token bindings bindings-pool bindings-router optimize optimize-pool optimize-router optimize-test-token deploy deploy-router deploy-tokens deploy-testnet testnet-evidence setup keys fund clean fmt fmt-check lint help
 
 ## all: build all production contracts
 all: build
@@ -118,16 +108,16 @@ optimize-test-token:
 	rustup run $(RUST_VERSION) $(STELLAR) contract build --package test-token --optimize
 	@echo "optimized: $(TEST_TOKEN_WASM)"
 
-## deploy: deploy a router and create a 2-token pool (set OWNER, TOKEN_A, TOKEN_B)
-deploy: optimize
-	@test -n "$(OWNER)"   || { echo "ERROR: set OWNER=<G... or C... address>";   exit 1; }
-	@test -n "$(TOKEN_A)" || { echo "ERROR: set TOKEN_A=<token contract address>"; exit 1; }
-	@test -n "$(TOKEN_B)" || { echo "ERROR: set TOKEN_B=<token contract address>"; exit 1; }
-	@pool_hash=`$(STELLAR) contract upload --wasm $(POOL_WASM) --source $(SOURCE) --network $(NETWORK)`; \
-	router=`$(STELLAR) contract deploy --wasm $(ROUTER_WASM) --source $(SOURCE) --network $(NETWORK) -- --owner $(OWNER) --pool_wasm_hash $$pool_hash --default_protocol_fee $(PROTOCOL_FEE) --default_protocol_beneficiary $(BENEFICIARY)`; \
-	pool=`$(STELLAR) contract invoke --id $$router --source $(SOURCE) --network $(NETWORK) -- create_pool --creator $(OWNER) --tokens '["$(TOKEN_A)","$(TOKEN_B)"]' --amp_factor $(AMP_FACTOR) --amp_control $(AMP_CONTROL) --swap_fee $(SWAP_FEE) --max_caps '[$(MAX_CAP),$(MAX_CAP)]' --lp_max_supply $(LP_MAX_SUPPLY) --lp_name '$(LP_NAME)' --lp_symbol '$(LP_SYMBOL)' | tr -d '"'`; \
-	echo "router: $$router"; \
-	echo "pool: $$pool"
+## deploy: upload pool WASM and deploy the router with protocol defaults
+deploy: deploy-router
+
+## deploy-router: upload pool WASM and deploy the router with protocol defaults
+deploy-router:
+	STELLAR=$(STELLAR) NETWORK=$(NETWORK) SOURCE=$(SOURCE) RUST_VERSION=$(RUST_VERSION) TARGET_TRIPLE=$(TARGET_TRIPLE) OWNER='$(OWNER)' BENEFICIARY='$(BENEFICIARY)' PROTOCOL_FEE=$(PROTOCOL_FEE) SWAP_FEE=$(SWAP_FEE) scripts/deploy-router.sh
+
+## deploy-tokens: deploy every catalog token as custom Soroban token and SAC (testnet only)
+deploy-tokens:
+	STELLAR=$(STELLAR) NETWORK=$(NETWORK) SOURCE=$(SOURCE) RUST_VERSION=$(RUST_VERSION) TARGET_TRIPLE=$(TARGET_TRIPLE) scripts/deploy-tokens.sh
 
 ## deploy-testnet: deploy testnet open-mint tokens and a pool; save addresses
 deploy-testnet:

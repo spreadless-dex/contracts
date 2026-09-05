@@ -24,6 +24,16 @@ import type {
 export * from "@stellar/stellar-sdk";
 export * as contract from "@stellar/stellar-sdk/contract";
 export * as rpc from "@stellar/stellar-sdk/rpc";
+export { deploymentNetworks, deployments } from "./deployments.js";
+export type {
+  Deployment,
+  DeploymentNetwork,
+  NetworkDeployment,
+  PoolDeploymentDefaults,
+  RouterDeployment,
+  TokenDeployment,
+  TokenRepresentation,
+} from "./deployments.js";
 
 if (typeof window !== "undefined") {
   //@ts-ignore Buffer exists

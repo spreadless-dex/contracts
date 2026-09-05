@@ -7,6 +7,8 @@ on:
     paths:
       - ".github/workflows/publish-liquidity-pool-binding.yml"
       - "bindings/liquidity-pool/**"
+      - "deployments/**"
+      - "scripts/generate-sdk-deployments.mjs"
   workflow_dispatch:
 
 permissions:

@@ -35,10 +35,24 @@ Requires Node 18+ (or any runtime with global `fetch` and `BigInt`).
 
 ## Deployed contracts
 
-The SDK does **not** bundle a `networks` constant — you pass the contract ID,
-network passphrase, and RPC URL yourself. The checked-in **testnet** deployment
-below predates the protocol-controller ABI and is retained only as historical
-execution evidence; redeploy before using the new administrative methods.
+The SDK exports the checked-in deployment registry. It includes the active
+router, pool deployment defaults, and both representations of every catalog
+token:
+
+```ts
+import { deployments } from "@spreadless-dex/sdk";
+
+const testnet = deployments.testnet;
+const routerId = testnet.contracts.router?.address;
+const defaultSwapFee = testnet.pool_defaults?.swap_fee;
+const usdc = testnet.contracts.tokens?.find((token) => token.id === "usdc");
+```
+
+The registry is also available from `@spreadless-dex/sdk/deployments`. RPC URLs
+and network passphrases still come from the consuming application.
+
+The older pool below predates the current router ABI and remains as historical
+execution evidence. New pools should be created through the exported router.
 
 | What | Value |
 | --- | --- |
@@ -56,8 +70,9 @@ see [Token order](#token-order-matters)):
 | 2 | SUSD (SAC) | `CDDE66QMXWVUVEHLA5IRUJBHPJK3RFH6JIXCIJ5S6HOAXAPYR2AIZUWD` | 7 |
 | 3 | sUSDC | `CDKFYHC3EPRCZY4DIMCIBQ3PO5QPD6KZFFXNMLS4XENY2QNTZN2KLMRM` | 7 |
 
-The three `s*` tokens are open-mint test tokens: anyone can call
-`mint(to, amount)` to fund an account for testing. Always treat
+The three historical `s*` tokens and the current catalog's custom Soroban
+tokens are open-mint test tokens: anyone can call `mint(to, amount)` to fund an
+account for testing. Always treat
 [`deployments/testnet.json`](https://github.com/spreadless-dex/contracts/blob/main/deployments/testnet.json)
 in the repo as the source of truth — addresses change when the pool is
 redeployed. Don't hardcode the reserve order from this table; read it live with

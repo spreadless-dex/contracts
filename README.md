@@ -222,7 +222,8 @@ Build optimized pool and router WASM files:
 make optimize
 ```
 
-Deploy a testnet pool with two open-mint test tokens and save the addresses:
+Deploy the legacy testnet demo pool with three open-mint test tokens and save
+its addresses:
 
 ```sh
 make deploy-testnet SOURCE=<stellar-identity>
@@ -230,32 +231,61 @@ make deploy-testnet SOURCE=<stellar-identity>
 
 ## Deploy
 
-The Makefile includes a 2-token deployment template. It uploads the pool WASM,
-deploys a router, then creates the pool through that router. `TOKEN_A` and
-`TOKEN_B` must be SEP-41-compatible token addresses in strictly ascending order.
+The production deployment command uploads the pool WASM and deploys a router
+with the configured protocol defaults. Pools are created separately through
+that router after choosing two to five deployed token addresses.
 
 ```sh
 make deploy \
   OWNER=<owner-address> \
-  TOKEN_A=<first-token-contract> \
-  TOKEN_B=<second-token-contract> \
   BENEFICIARY=<fee-beneficiary> \
-  AMP_FACTOR=100 \
-  AMP_CONTROL=ProtocolManaged \
-  SWAP_FEE=100000 \
-  PROTOCOL_FEE=0 \
-  LP_NAME='USD Stable LP' \
-  LP_SYMBOL=usdSLP
+  PROTOCOL_FEE=330000000 \
+  SWAP_FEE=10000000
 ```
 
 Useful deployment variables:
 
 - `NETWORK`: Stellar CLI network name. Defaults to `testnet`.
 - `SOURCE`: Stellar CLI key name used to deploy. Defaults to `default`.
-- `MAX_CAP`: per-token cap used by the template.
-- `LP_MAX_SUPPLY`: total LP-share supply cap.
-- `LP_NAME` / `LP_SYMBOL`: pool-specific SEP-41 metadata.
+- `OWNER`: router owner. Defaults to the public key for `SOURCE`.
+- `BENEFICIARY`: default protocol-fee recipient. Defaults to `OWNER`.
+- `PROTOCOL_FEE`: default protocol share of pool swap fees. Defaults to 33%.
+- `SWAP_FEE`: deployment default passed when creating pools. Defaults to 1%;
+  it is stored in the manifest because the router has no on-chain swap-fee
+  default.
 - `STELLAR`: CLI binary. Set to `soroban` if using an older install.
+
+The testnet token catalog lives in `config/tokens.json`. Deploy every catalog
+entry both as an open-mint Soroban token and as a self-issued classic Stellar
+asset with a SAC wrapper:
+
+```sh
+make deploy-tokens SOURCE=<stellar-identity>
+```
+
+The script establishes trustlines, issues `INITIAL_BALANCE` of each
+representation to the deployment identity, and stores both contract addresses
+under `contracts.tokens` in `deployments/testnet.json`. It is intentionally
+blocked outside testnet because these are synthetic assets, not the official
+mainnet issuers.
+
+The npm SDK generates and exports a typed `deployments` registry from
+`deployments/*.json` during `npm run build`:
+
+```ts
+import { deployments } from "@spreadless-dex/sdk";
+
+const router = deployments.testnet.contracts.router?.address;
+const tokens = deployments.testnet.contracts.tokens;
+```
+
+The same registry is available from the dedicated
+`@spreadless-dex/sdk/deployments` export.
+
+Both fields are optional in the SDK type because a network manifest may be
+committed between the router and token deployment steps. After deployment,
+commit the updated manifest and bump the SDK package version to publish the new
+addresses to npm.
 
 The router assigns monotonically increasing pool IDs. `next_pool_id()` returns
 the ID that will be assigned next, while `pool_at(id)` resolves a registered
