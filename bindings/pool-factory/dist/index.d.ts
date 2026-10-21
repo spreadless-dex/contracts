@@ -166,6 +166,12 @@ export interface Client {
         new_hash: Buffer;
     }, options?: MethodOptions) => Promise<AssembledTransaction<null>>;
     /**
+     * Construct and simulate a stop_pool_amp_ramp transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+     */
+    stop_pool_amp_ramp: ({ pool_id }: {
+        pool_id: u32;
+    }, options?: MethodOptions) => Promise<AssembledTransaction<null>>;
+    /**
      * Construct and simulate a transfer_ownership transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
      * Initiates a 2-step ownership transfer to a new address.
      *
@@ -266,6 +272,7 @@ export declare class Client extends ContractClient {
         get_pool_wasm_hash: (json: string) => AssembledTransaction<Buffer>;
         renounce_ownership: (json: string) => AssembledTransaction<null>;
         set_pool_wasm_hash: (json: string) => AssembledTransaction<null>;
+        stop_pool_amp_ramp: (json: string) => AssembledTransaction<null>;
         transfer_ownership: (json: string) => AssembledTransaction<null>;
         set_pool_beneficiary: (json: string) => AssembledTransaction<null>;
         set_pool_protocol_fee: (json: string) => AssembledTransaction<null>;
