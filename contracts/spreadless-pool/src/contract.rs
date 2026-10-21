@@ -5,8 +5,8 @@ use soroban_sdk::{
     MuxedAddress, String, Vec,
 };
 use stellar_access::ownable::{self, Ownable};
-use stellar_contract_utils::pausable;
-use stellar_macros::{only_owner, when_not_paused};
+use stellar_contract_utils::pausable::{self, PausableError};
+use stellar_macros::only_owner;
 use stellar_tokens::fungible::{burnable::FungibleBurnable, capped, Base, FungibleToken};
 
 use crate::error::Error;
@@ -68,6 +68,14 @@ pub struct Swap {
     pub token_out: Address,
     pub amount_in: i128,
     pub amount_out: i128,
+}
+
+/// Protocol-controller pause toggled. Topics: `("protocol_pause_updated",)`.
+/// The owner's pause path emits OpenZeppelin's `paused` / `unpaused` events.
+#[contractevent]
+#[derive(Clone)]
+pub struct ProtocolPauseUpdated {
+    pub paused: bool,
 }
 
 /// The liquidity pool. It is simultaneously the AMM and its own SEP-41 LP-share
@@ -173,8 +181,8 @@ impl SpreadlessPool {
 
 #[contractimpl(contracttrait)]
 impl SpreadlessPoolInterface for SpreadlessPool {
-    #[when_not_paused]
     fn deposit(e: Env, to: Address, amounts_in: Vec<i128>, min_lp_out: i128) -> i128 {
+        require_not_paused(&e);
         to.require_auth();
 
         let mut pool = pool::read_pool(&e);
@@ -402,7 +410,6 @@ impl SpreadlessPoolInterface for SpreadlessPool {
     /// least `min_out` back. The swap fee is charged on the output; the
     /// protocol's cut of it is routed to the beneficiary and the rest stays in
     /// the pool for LPs. Returns the amount of `token_out` sent to `to`.
-    #[when_not_paused]
     fn swap_exact_in(
         e: Env,
         to: Address,
@@ -411,6 +418,7 @@ impl SpreadlessPoolInterface for SpreadlessPool {
         amount_in: i128,
         min_out: i128,
     ) -> i128 {
+        require_not_paused(&e);
         to.require_auth();
 
         let mut pool = pool::read_pool(&e);
@@ -461,7 +469,6 @@ impl SpreadlessPoolInterface for SpreadlessPool {
 
     /// Swap `token_in` for an exact `amount_out` of `token_out`, spending at
     /// most `max_in`. Returns the amount of `token_in` taken from `to`.
-    #[when_not_paused]
     fn swap_exact_out(
         e: Env,
         to: Address,
@@ -470,6 +477,7 @@ impl SpreadlessPoolInterface for SpreadlessPool {
         amount_out: i128,
         max_in: i128,
     ) -> i128 {
+        require_not_paused(&e);
         to.require_auth();
 
         let mut pool = pool::read_pool(&e);
@@ -576,28 +584,54 @@ impl SpreadlessPoolInterface for SpreadlessPool {
 
     // --- protocol administration ---
 
-    /// Start (or replace) a linear amplification ramp toward `target_factor`
-    /// over `duration` seconds. The ramp begins from the current interpolated
-    /// factor, so there is no discontinuity. `duration == 0` applies it at once.
+    /// Start a linear amplification ramp toward `target_factor` over `duration`
+    /// seconds, beginning from the current factor (no discontinuity). The ramp
+    /// must last at least `MIN_RAMP_DURATION`, move `A` by at most
+    /// `MAX_AMP_CHANGE` either way, and start at least `MIN_RAMP_DURATION`
+    /// after the previous ramp started, so re-ramping can't compound past
+    /// `MAX_AMP_CHANGE` per `MIN_RAMP_DURATION`.
     fn set_amp_ramp(e: Env, target_factor: u32, duration: u64) {
-        let mut pool = require_protocol_controller(&e);
-        if pool.amp_control == pool::AmpControl::Locked {
-            panic_with_error!(&e, Error::AmpControlLocked);
-        }
+        let mut pool = require_amp_controller(&e);
         if !pool::is_valid_amp_factor(target_factor) {
             panic_with_error!(&e, Error::InvalidAmpFactor);
         }
+        if duration < pool::MIN_RAMP_DURATION {
+            panic_with_error!(&e, Error::AmpRampTooShort);
+        }
         let now = e.ledger().timestamp();
+        // `ramp_start_ts == 0` means no ramp has ever started (set at creation).
+        if pool.ramp_start_ts != 0
+            && now < pool.ramp_start_ts.saturating_add(pool::MIN_RAMP_DURATION)
+        {
+            panic_with_error!(&e, Error::AmpRampCooldown);
+        }
         // Re-seed the ramp from the current factor. Re-ramping mid-ramp floors
         // the in-progress interpolated factor to an integer, which can drop a
         // sub-unit fraction — negligible, since `A` is an integer parameter.
         let current_factor = (pool::current_amp(&pool, now) / AMP_PRECISION) as u32;
+        if !pool::is_valid_amp_change(current_factor, target_factor) {
+            panic_with_error!(&e, Error::AmpChangeTooLarge);
+        }
         pool.amp_initial_factor = current_factor;
         pool.amp_target_factor = target_factor;
         pool.ramp_start_ts = now;
         pool.ramp_stop_ts = now
             .checked_add(duration)
             .unwrap_or_else(|| panic_with_error!(&e, Error::MathError));
+        pool::write_pool(&e, &pool);
+        pool::extend_instance_ttl(&e);
+    }
+
+    /// Freeze `A` at its current (floored) factor, ending any ramp in progress.
+    /// This also restarts the ramp cooldown, so stop-and-restart can't bypass it.
+    fn stop_amp_ramp(e: Env) {
+        let mut pool = require_amp_controller(&e);
+        let now = e.ledger().timestamp();
+        let current_factor = (pool::current_amp(&pool, now) / AMP_PRECISION) as u32;
+        pool.amp_initial_factor = current_factor;
+        pool.amp_target_factor = current_factor;
+        pool.ramp_start_ts = now;
+        pool.ramp_stop_ts = now;
         pool::write_pool(&e, &pool);
         pool::extend_instance_ttl(&e);
     }
@@ -621,16 +655,28 @@ impl SpreadlessPoolInterface for SpreadlessPool {
         pool::extend_instance_ttl(&e);
     }
 
+    /// Set the protocol pause flag. Only the protocol controller can clear it;
+    /// the owner's `unpause` does not touch it.
     fn protocol_pause(e: Env) {
         require_protocol_controller(&e);
-        pausable::pause(&e);
+        if pool::protocol_paused(&e) {
+            panic_with_error!(&e, PausableError::EnforcedPause);
+        }
+        pool::set_protocol_paused(&e, true);
         pool::extend_instance_ttl(&e);
+        ProtocolPauseUpdated { paused: true }.publish(&e);
     }
 
+    /// Clear the protocol pause flag. The pool stays paused if the owner has
+    /// also paused it.
     fn protocol_unpause(e: Env) {
         require_protocol_controller(&e);
-        pausable::unpause(&e);
+        if !pool::protocol_paused(&e) {
+            panic_with_error!(&e, PausableError::ExpectedPause);
+        }
+        pool::set_protocol_paused(&e, false);
         pool::extend_instance_ttl(&e);
+        ProtocolPauseUpdated { paused: false }.publish(&e);
     }
 
     // --- pool-owner administration ---
@@ -671,20 +717,29 @@ impl SpreadlessPoolInterface for SpreadlessPool {
         pool::extend_instance_ttl(&e);
     }
 
-    /// Pause deposits and swaps. Withdrawals remain available.
+    /// Set the owner pause flag (blocks deposits and swaps; withdrawals remain
+    /// available).
     #[only_owner]
     fn pause(e: Env) {
         pausable::pause(&e);
     }
 
-    /// Resume a paused pool.
+    /// Clear the owner pause flag. Cannot lift a protocol pause.
     #[only_owner]
     fn unpause(e: Env) {
         pausable::unpause(&e);
     }
 
-    /// Whether the pool is currently paused.
+    /// Whether the pool is paused by either the protocol or the owner.
     fn paused(e: Env) -> bool {
+        pool::protocol_paused(&e) || pausable::paused(&e)
+    }
+
+    fn is_protocol_paused(e: Env) -> bool {
+        pool::protocol_paused(&e)
+    }
+
+    fn is_owner_paused(e: Env) -> bool {
         pausable::paused(&e)
     }
 }
@@ -715,6 +770,23 @@ fn require_protocol_controller(e: &Env) -> Pool {
     let pool = pool::read_pool(e);
     pool.protocol_controller.require_auth();
     pool
+}
+
+/// Authenticate the protocol controller for an amplification change, rejecting
+/// pools whose amplification was locked at creation.
+fn require_amp_controller(e: &Env) -> Pool {
+    let pool = require_protocol_controller(e);
+    if pool.amp_control == pool::AmpControl::Locked {
+        panic_with_error!(e, Error::AmpControlLocked);
+    }
+    pool
+}
+
+/// Trap with `EnforcedPause` if either the protocol or the owner paused the pool.
+fn require_not_paused(e: &Env) {
+    if pool::protocol_paused(e) || pausable::paused(e) {
+        panic_with_error!(e, PausableError::EnforcedPause);
+    }
 }
 
 /// Index of `token` within the pool, trapping with `UnknownToken` if absent.

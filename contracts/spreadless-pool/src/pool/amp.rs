@@ -6,6 +6,14 @@ use crate::math::{AMP_PRECISION, MAX_AMP, MIN_AMP};
 
 use super::state::Pool;
 
+/// Shortest allowed amplification ramp, and the cooldown between ramp starts
+/// (one day). Together with `MAX_AMP_CHANGE` this bounds how fast `A` can move,
+/// so LPs can't be sandwiched around an abrupt amplification change.
+pub const MIN_RAMP_DURATION: u64 = 86_400;
+
+/// A single ramp may move `A` by at most this factor, up or down.
+pub const MAX_AMP_CHANGE: u64 = 10;
+
 /// Interpolate the amplification factor linearly between `initial_factor` and
 /// `target_factor` over `[start_ts, stop_ts]`; outside the window it clamps to
 /// the endpoints, and a degenerate window (`stop_ts <= start_ts`) is treated as
@@ -43,4 +51,11 @@ pub fn current_amp(pool: &Pool, now: u64) -> u64 {
 
 pub fn is_valid_amp_factor(factor: u32) -> bool {
     factor >= MIN_AMP as u32 && factor <= MAX_AMP as u32
+}
+
+/// Whether a ramp from `current_factor` to `target_factor` stays within
+/// `MAX_AMP_CHANGE` in either direction.
+pub fn is_valid_amp_change(current_factor: u32, target_factor: u32) -> bool {
+    let (current, target) = (current_factor as u64, target_factor as u64);
+    target <= current * MAX_AMP_CHANGE && current <= target * MAX_AMP_CHANGE
 }

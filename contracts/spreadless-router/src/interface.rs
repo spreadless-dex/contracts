@@ -77,6 +77,8 @@ pub trait SpreadlessRouterInterface {
 
     fn set_pool_amp_ramp(e: Env, pool_id: u32, target_factor: u32, duration: u64);
 
+    fn stop_pool_amp_ramp(e: Env, pool_id: u32);
+
     fn pause_pool(e: Env, pool_id: u32);
 
     fn unpause_pool(e: Env, pool_id: u32);

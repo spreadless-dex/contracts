@@ -72,6 +72,13 @@ pub struct PoolAmpRampSet {
 
 #[contractevent]
 #[derive(Clone)]
+pub struct PoolAmpRampStopped {
+    #[topic]
+    pub pool: Address,
+}
+
+#[contractevent]
+#[derive(Clone)]
 pub struct PoolPauseUpdated {
     #[topic]
     pub pool: Address,
@@ -269,6 +276,13 @@ impl SpreadlessRouterInterface for SpreadlessRouter {
             duration,
         }
         .publish(&e);
+    }
+
+    #[only_owner]
+    fn stop_pool_amp_ramp(e: Env, pool_id: u32) {
+        let pool = registered_pool(&e, pool_id);
+        SpreadlessPoolInterfaceClient::new(&e, &pool).stop_amp_ramp();
+        PoolAmpRampStopped { pool }.publish(&e);
     }
 
     #[only_owner]

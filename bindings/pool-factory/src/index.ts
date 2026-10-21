@@ -50,6 +50,7 @@ export const Errors = {
 
 
 
+
 /**
  * One leg of an exact-input routed swap.
  *
@@ -165,6 +166,11 @@ export interface Client {
   set_pool_wasm_hash: ({new_hash}: {new_hash: Buffer}, options?: MethodOptions) => Promise<AssembledTransaction<null>>
 
   /**
+   * Construct and simulate a stop_pool_amp_ramp transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+   */
+  stop_pool_amp_ramp: ({pool_id}: {pool_id: u32}, options?: MethodOptions) => Promise<AssembledTransaction<null>>
+
+  /**
    * Construct and simulate a transfer_ownership transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
    * Initiates a 2-step ownership transfer to a new address.
    *
@@ -251,6 +257,7 @@ export class Client extends ContractClient {
         "AAAABQAAAAAAAAAAAAAAD1Bvb2xXYXNtVXBkYXRlZAAAAAABAAAAEXBvb2xfd2FzbV91cGRhdGVkAAAAAAAAAgAAAAAAAAAIb2xkX2hhc2gAAAPuAAAAIAAAAAAAAAAAAAAACG5ld19oYXNoAAAD7gAAACAAAAAAAAAAAg==",
         "AAAABQAAAAAAAAAAAAAAEFBvb2xQYXVzZVVwZGF0ZWQAAAABAAAAEnBvb2xfcGF1c2VfdXBkYXRlZAAAAAAAAgAAAAAAAAAEcG9vbAAAABMAAAABAAAAAAAAAAZwYXVzZWQAAAAAAAEAAAAAAAAAAg==",
         "AAAAAAAAAAAAAAAHcG9vbF9hdAAAAAABAAAAAAAAAAJpZAAAAAAABAAAAAEAAAPoAAAAEw==",
+        "AAAABQAAAAAAAAAAAAAAElBvb2xBbXBSYW1wU3RvcHBlZAAAAAAAAQAAABVwb29sX2FtcF9yYW1wX3N0b3BwZWQAAAAAAAABAAAAAAAAAARwb29sAAAAEwAAAAEAAAAC",
         "AAAAAAAAAJBSZXR1cm5zIGBTb21lKEFkZHJlc3MpYCBpZiBvd25lcnNoaXAgaXMgc2V0LCBvciBgTm9uZWAgaWYgb3duZXJzaGlwIGhhcwpiZWVuIHJlbm91bmNlZC4KCiMgQXJndW1lbnRzCgoqIGBlYCAtIEFjY2VzcyB0byB0aGUgU29yb2JhbiBlbnZpcm9ubWVudC4AAAAJZ2V0X293bmVyAAAAAAAAAAAAAAEAAAPoAAAAEw==",
         "AAAAAAAAAAAAAAAKcGF1c2VfcG9vbAAAAAAAAQAAAAAAAAAHcG9vbF9pZAAAAAAEAAAAAA==",
         "AAAAAAAAAAAAAAALY3JlYXRlX3Bvb2wAAAAACQAAAAAAAAAHY3JlYXRvcgAAAAATAAAAAAAAAAZ0b2tlbnMAAAAAA+oAAAATAAAAAAAAAAphbXBfZmFjdG9yAAAAAAAEAAAAAAAAAAthbXBfY29udHJvbAAAAAfQAAAACkFtcENvbnRyb2wAAAAAAAAAAAAIc3dhcF9mZWUAAAAGAAAAAAAAAAhtYXhfY2FwcwAAA+oAAAALAAAAAAAAAA1scF9tYXhfc3VwcGx5AAAAAAAACwAAAAAAAAAHbHBfbmFtZQAAAAAQAAAAAAAAAAlscF9zeW1ib2wAAAAAAAAQAAAAAQAAABM=",
@@ -267,6 +274,7 @@ export class Client extends ContractClient {
         "AAAAAAAAAAAAAAASZ2V0X3Bvb2xfd2FzbV9oYXNoAAAAAAAAAAAAAQAAA+4AAAAg",
         "AAAAAAAAAAAAAAAScmVub3VuY2Vfb3duZXJzaGlwAAAAAAAAAAAAAA==",
         "AAAAAAAAAAAAAAASc2V0X3Bvb2xfd2FzbV9oYXNoAAAAAAABAAAAAAAAAAhuZXdfaGFzaAAAA+4AAAAgAAAAAA==",
+        "AAAAAAAAAAAAAAASc3RvcF9wb29sX2FtcF9yYW1wAAAAAAABAAAAAAAAAAdwb29sX2lkAAAAAAQAAAAA",
         "AAAAAAAAA45Jbml0aWF0ZXMgYSAyLXN0ZXAgb3duZXJzaGlwIHRyYW5zZmVyIHRvIGEgbmV3IGFkZHJlc3MuCgpSZXF1aXJlcyBhdXRob3JpemF0aW9uIGZyb20gdGhlIGN1cnJlbnQgb3duZXIuIFRoZSBuZXcgb3duZXIgbXVzdCBsYXRlcgpjYWxsIGBhY2NlcHRfb3duZXJzaGlwKClgIHRvIGNvbXBsZXRlIHRoZSB0cmFuc2Zlci4KCiMgQXJndW1lbnRzCgoqIGBlYCAtIEFjY2VzcyB0byB0aGUgU29yb2JhbiBlbnZpcm9ubWVudC4KKiBgbmV3X293bmVyYCAtIFRoZSBwcm9wb3NlZCBuZXcgb3duZXIuCiogYGxpdmVfdW50aWxfbGVkZ2VyYCAtIExlZGdlciBudW1iZXIgdW50aWwgd2hpY2ggdGhlIG5ldyBvd25lciBjYW4KYWNjZXB0LiBBIHZhbHVlIG9mIGAwYCBjYW5jZWxzIGFueSBwZW5kaW5nIHRyYW5zZmVyLgoKIyBFcnJvcnMKCiogW2BPd25hYmxlRXJyb3I6Ok93bmVyTm90U2V0YF0gLSBJZiB0aGUgb3duZXIgaXMgbm90IHNldC4KKiBbYGNyYXRlOjpyb2xlX3RyYW5zZmVyOjpSb2xlVHJhbnNmZXJFcnJvcjo6Tm9QZW5kaW5nVHJhbnNmZXJgXSAtIElmCnRyeWluZyB0byBjYW5jZWwgYSB0cmFuc2ZlciB0aGF0IGRvZXNuJ3QgZXhpc3QuCiogW2BjcmF0ZTo6cm9sZV90cmFuc2Zlcjo6Um9sZVRyYW5zZmVyRXJyb3I6OkludmFsaWRMaXZlVW50aWxMZWRnZXJgXSAtCklmIHRoZSBzcGVjaWZpZWQgbGVkZ2VyIGlzIGluIHRoZSBwYXN0LgoqIFtgY3JhdGU6OnJvbGVfdHJhbnNmZXI6OlJvbGVUcmFuc2ZlckVycm9yOjpJbnZhbGlkUGVuZGluZ0FjY291bnRgXSAtCklmIHRoZSBzcGVjaWZpZWQgcGVuZGluZyBhY2NvdW50IGlzIG5vdCB0aGUgc2FtZSBhcyB0aGUgcHJvdmlkZWQgYG5ld2AKYWRkcmVzcy4KCiMgTm90ZXMKCiogQXV0aG9yaXphdGlvbiBmb3IgdGhlIGN1cnJlbnQgb3duZXIgaXMgcmVxdWlyZWQuAAAAAAASdHJhbnNmZXJfb3duZXJzaGlwAAAAAAACAAAAAAAAAAluZXdfb3duZXIAAAAAAAATAAAAAAAAABFsaXZlX3VudGlsX2xlZGdlcgAAAAAAAAQAAAAA",
         "AAAAAAAAAAAAAAAUc2V0X3Bvb2xfYmVuZWZpY2lhcnkAAAACAAAAAAAAAAdwb29sX2lkAAAAAAQAAAAAAAAAD25ld19iZW5lZmljaWFyeQAAAAATAAAAAA==",
         "AAAAAAAAAAAAAAAVc2V0X3Bvb2xfcHJvdG9jb2xfZmVlAAAAAAAAAgAAAAAAAAAHcG9vbF9pZAAAAAAEAAAAAAAAAAduZXdfZmVlAAAAAAYAAAAA",
@@ -296,6 +304,7 @@ export class Client extends ContractClient {
         get_pool_wasm_hash: this.txFromJSON<Buffer>,
         renounce_ownership: this.txFromJSON<null>,
         set_pool_wasm_hash: this.txFromJSON<null>,
+        stop_pool_amp_ramp: this.txFromJSON<null>,
         transfer_ownership: this.txFromJSON<null>,
         set_pool_beneficiary: this.txFromJSON<null>,
         set_pool_protocol_fee: this.txFromJSON<null>,
