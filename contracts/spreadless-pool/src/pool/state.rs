@@ -18,6 +18,9 @@ const INSTANCE_LIFETIME_THRESHOLD: u32 = INSTANCE_BUMP_AMOUNT - DAY_IN_LEDGERS;
 #[contracttype]
 pub enum DataKey {
     Pool,
+    /// Protocol-controller pause flag. Deliberately separate from the owner's
+    /// OpenZeppelin `pausable` flag so neither party can clear the other's pause.
+    ProtocolPaused,
 }
 
 /// One token in the pool. `reserve` and `max_cap` are stored already normalized
@@ -92,6 +95,19 @@ pub fn read_pool(e: &Env) -> Pool {
 
 pub fn write_pool(e: &Env, pool: &Pool) {
     e.storage().instance().set(&DataKey::Pool, pool);
+}
+
+pub fn protocol_paused(e: &Env) -> bool {
+    e.storage()
+        .instance()
+        .get(&DataKey::ProtocolPaused)
+        .unwrap_or(false)
+}
+
+pub fn set_protocol_paused(e: &Env, paused: bool) {
+    e.storage()
+        .instance()
+        .set(&DataKey::ProtocolPaused, &paused);
 }
 
 pub fn extend_instance_ttl(e: &Env) {

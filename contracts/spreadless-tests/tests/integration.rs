@@ -2,9 +2,9 @@
 
 use soroban_sdk::{
     contract, contractclient, contractimpl, contracttrait, contracttype,
-    testutils::Address as _,
+    testutils::{Address as _, Ledger as _},
     token::{StellarAssetClient, TokenClient},
-    Address, BytesN, Env, MuxedAddress, String, Vec,
+    Address, BytesN, Env, Error, MuxedAddress, String, Vec,
 };
 use spreadless_pool_interface::{AmpControl, SpreadlessPoolInterfaceClient};
 
@@ -58,6 +58,7 @@ trait RouterInterface {
     fn set_pool_protocol_fee(e: Env, pool_id: u32, new_fee: u64);
     fn set_pool_beneficiary(e: Env, pool_id: u32, new_beneficiary: Address);
     fn set_pool_amp_ramp(e: Env, pool_id: u32, target_factor: u32, duration: u64);
+    fn stop_pool_amp_ramp(e: Env, pool_id: u32);
     fn pause_pool(e: Env, pool_id: u32);
     fn unpause_pool(e: Env, pool_id: u32);
 }
@@ -493,6 +494,198 @@ fn pause_blocks_entry_but_keeps_proportional_exit_open() {
     let paid = pool.withdraw(&f.user, &(minted / 10), &amounts(&f.env, &[0, 0]));
     assert!(paid.get(0).unwrap() > 0);
     assert!(paid.get(1).unwrap() > 0);
+}
+
+// Pool error codes (contracts/spreadless-pool/src/error.rs) and OpenZeppelin's
+// pausable errors, as seen through the WASM boundary.
+const AMP_CONTROL_LOCKED: u32 = 21;
+const AMP_RAMP_TOO_SHORT: u32 = 23;
+const AMP_RAMP_COOLDOWN: u32 = 24;
+const AMP_CHANGE_TOO_LARGE: u32 = 25;
+const ENFORCED_PAUSE: u32 = 1000;
+const EXPECTED_PAUSE: u32 = 1001;
+const DAY: u64 = 86_400;
+
+/// Assert that a `try_*` call failed with contract error `code`.
+fn assert_contract_error<T, E>(result: Result<T, Result<Error, E>>, code: u32) {
+    assert_eq!(
+        result.err().and_then(|e| e.ok()),
+        Some(Error::from_contract_error(code))
+    );
+}
+
+fn set_time(env: &Env, timestamp: u64) {
+    env.ledger().with_mut(|l| l.timestamp = timestamp);
+}
+
+#[test]
+fn owner_cannot_lift_a_protocol_pause() {
+    let f = pool_fixture();
+    seed_pool(&f, 500_000_000);
+    let pool = SpreadlessPoolInterfaceClient::new(&f.env, &f.pool);
+
+    pool.protocol_pause();
+    assert!(pool.paused());
+    assert!(pool.is_protocol_paused());
+    assert!(!pool.is_owner_paused());
+
+    // The owner's unpause only touches the owner flag, which isn't set.
+    assert_contract_error(pool.try_unpause(), EXPECTED_PAUSE);
+    // Pausing and unpausing the owner flag leaves the protocol pause in force.
+    pool.pause();
+    pool.unpause();
+    assert!(pool.paused());
+    assert_contract_error(
+        pool.try_swap_exact_in(&f.user, &f.token_0, &f.token_1, &1_000_000, &0),
+        ENFORCED_PAUSE,
+    );
+
+    // Symmetrically, lifting the protocol pause doesn't clear an owner pause.
+    pool.pause();
+    pool.protocol_unpause();
+    assert!(pool.paused());
+    assert!(pool.is_owner_paused());
+    assert_contract_error(
+        pool.try_deposit(&f.user, &amounts(&f.env, &[1_000_000, 1_000_000]), &0),
+        ENFORCED_PAUSE,
+    );
+
+    pool.unpause();
+    assert!(!pool.paused());
+    assert!(pool.swap_exact_in(&f.user, &f.token_0, &f.token_1, &1_000_000, &0) > 0);
+}
+
+#[test]
+fn protocol_pause_flag_rejects_redundant_transitions() {
+    let f = pool_fixture();
+    let pool = SpreadlessPoolInterfaceClient::new(&f.env, &f.pool);
+
+    assert_contract_error(pool.try_protocol_unpause(), EXPECTED_PAUSE);
+    pool.protocol_pause();
+    assert_contract_error(pool.try_protocol_pause(), ENFORCED_PAUSE);
+}
+
+#[test]
+fn pool_creator_cannot_lift_a_router_emergency_pause() {
+    let f = router_fixture();
+    let pool_address = create_pool(
+        &f,
+        &[f.token_0.clone(), f.token_1.clone()],
+        AmpControl::Locked,
+    );
+    let pool = SpreadlessPoolInterfaceClient::new(&f.env, &pool_address);
+    pool.deposit(&f.user, &amounts(&f.env, &[500_000_000, 500_000_000]), &0);
+    let router = RouterClient::new(&f.env, &f.router);
+    router.pause_pool(&0);
+
+    assert!(pool.try_unpause().is_err());
+    assert!(pool.paused());
+
+    router.unpause_pool(&0);
+    assert!(!pool.paused());
+}
+
+#[test]
+fn amp_ramp_enforces_minimum_duration_and_change_limit() {
+    let f = pool_fixture();
+    let pool = SpreadlessPoolInterfaceClient::new(&f.env, &f.pool);
+    let start = 1_000_000;
+    set_time(&f.env, start);
+
+    assert_contract_error(pool.try_set_amp_ramp(&200, &0), AMP_RAMP_TOO_SHORT);
+    assert_contract_error(pool.try_set_amp_ramp(&200, &(DAY - 1)), AMP_RAMP_TOO_SHORT);
+    // From A = 100, the reachable range is [10, 1000].
+    assert_contract_error(pool.try_set_amp_ramp(&1_001, &DAY), AMP_CHANGE_TOO_LARGE);
+    assert_contract_error(pool.try_set_amp_ramp(&9, &DAY), AMP_CHANGE_TOO_LARGE);
+    assert_eq!(pool.get_amp(), 100);
+
+    pool.set_amp_ramp(&1_000, &DAY);
+    assert_eq!(pool.get_amp(), 100);
+    set_time(&f.env, start + DAY / 2);
+    assert_eq!(pool.get_amp(), 550);
+    set_time(&f.env, start + DAY);
+    assert_eq!(pool.get_amp(), 1_000);
+
+    // The downward bound is also exactly 10x.
+    pool.set_amp_ramp(&100, &DAY);
+    set_time(&f.env, start + 3 * DAY);
+    assert_eq!(pool.get_amp(), 100);
+}
+
+#[test]
+fn amp_ramps_cannot_be_chained_faster_than_the_cooldown() {
+    let f = pool_fixture();
+    let pool = SpreadlessPoolInterfaceClient::new(&f.env, &f.pool);
+    let start = 1_000_000;
+    set_time(&f.env, start);
+
+    // A long ramp may be replaced, but only once a full day has passed since
+    // it started, so A moves at most 10x per day.
+    pool.set_amp_ramp(&1_000, &(10 * DAY));
+    set_time(&f.env, start + 1);
+    assert_contract_error(pool.try_set_amp_ramp(&1_000, &DAY), AMP_RAMP_COOLDOWN);
+    set_time(&f.env, start + DAY - 1);
+    assert_contract_error(pool.try_set_amp_ramp(&1_000, &DAY), AMP_RAMP_COOLDOWN);
+
+    set_time(&f.env, start + DAY);
+    assert_eq!(pool.get_amp(), 190);
+    pool.set_amp_ramp(&1_900, &DAY);
+    set_time(&f.env, start + 2 * DAY);
+    assert_eq!(pool.get_amp(), 1_900);
+}
+
+#[test]
+fn stop_amp_ramp_freezes_amp_and_restarts_the_cooldown() {
+    let f = pool_fixture();
+    let pool = SpreadlessPoolInterfaceClient::new(&f.env, &f.pool);
+    let start = 1_000_000;
+    set_time(&f.env, start);
+
+    pool.set_amp_ramp(&1_000, &DAY);
+    set_time(&f.env, start + DAY / 2);
+    pool.stop_amp_ramp();
+    assert_eq!(pool.get_amp(), 550);
+    set_time(&f.env, start + 2 * DAY);
+    assert_eq!(pool.get_amp(), 550);
+
+    // Stopping counts as a ramp start, so stop-and-restart can't skip the
+    // cooldown.
+    set_time(&f.env, start + DAY / 2 + 1);
+    assert_contract_error(pool.try_set_amp_ramp(&1_000, &DAY), AMP_RAMP_COOLDOWN);
+    set_time(&f.env, start + DAY / 2 + DAY);
+    pool.set_amp_ramp(&1_000, &DAY);
+}
+
+#[test]
+fn router_can_stop_a_pool_amp_ramp() {
+    let f = router_fixture();
+    let router = RouterClient::new(&f.env, &f.router);
+    let managed = create_pool(
+        &f,
+        &[f.token_0.clone(), f.token_1.clone()],
+        AmpControl::ProtocolManaged,
+    );
+    let locked = create_pool(
+        &f,
+        &[f.token_0.clone(), f.token_1.clone()],
+        AmpControl::Locked,
+    );
+    let pool = SpreadlessPoolInterfaceClient::new(&f.env, &managed);
+    let start = 1_000_000;
+    set_time(&f.env, start);
+
+    router.set_pool_amp_ramp(&0, &1_000, &DAY);
+    set_time(&f.env, start + DAY / 2);
+    router.stop_pool_amp_ramp(&0);
+    set_time(&f.env, start + DAY);
+    assert_eq!(pool.get_amp(), 550);
+
+    assert!(router.try_stop_pool_amp_ramp(&1).is_err());
+    assert_contract_error(
+        SpreadlessPoolInterfaceClient::new(&f.env, &locked).try_stop_amp_ramp(),
+        AMP_CONTROL_LOCKED,
+    );
+    assert!(router.try_stop_pool_amp_ramp(&999).is_err());
 }
 
 #[test]
@@ -989,7 +1182,7 @@ fn locked_amplification_cannot_be_changed_through_router() {
     let amp_before = pool.get_amp();
 
     assert!(RouterClient::new(&f.env, &f.router)
-        .try_set_pool_amp_ramp(&0, &200, &100)
+        .try_set_pool_amp_ramp(&0, &200, &DAY)
         .is_err());
     assert_eq!(pool.get_amp(), amp_before);
 }
@@ -1076,7 +1269,7 @@ fn router_pool_administration_rejects_unknown_ids() {
 
     assert!(router.try_set_pool_protocol_fee(&999, &0).is_err());
     assert!(router.try_set_pool_beneficiary(&999, &beneficiary).is_err());
-    assert!(router.try_set_pool_amp_ramp(&999, &200, &100).is_err());
+    assert!(router.try_set_pool_amp_ramp(&999, &200, &DAY).is_err());
     assert!(router.try_pause_pool(&999).is_err());
     assert!(router.try_unpause_pool(&999).is_err());
     assert_eq!(router.pool_at(&999), None);

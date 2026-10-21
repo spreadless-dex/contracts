@@ -21,7 +21,10 @@ mod state;
 #[cfg(test)]
 mod tests;
 
-pub use amp::{current_amp, is_valid_amp_factor, ramp_amp};
+pub use amp::{
+    current_amp, is_valid_amp_change, is_valid_amp_factor, ramp_amp, MAX_AMP_CHANGE,
+    MIN_RAMP_DURATION,
+};
 pub use fee::{is_valid_protocol_fee, is_valid_swap_fee};
 pub use normalized::NormalizedAmounts;
 pub use quote::{
@@ -31,6 +34,6 @@ pub use quote::{
 pub use scaling::{from_internal, scaling_for, to_internal, INTERNAL_DECIMALS};
 pub use spreadless_pool_interface::AmpControl;
 pub use state::{
-    extend_instance_ttl, has_pool, normalize_amounts, read_pool, reserves, token_index, write_pool,
-    Pool, PoolToken,
+    extend_instance_ttl, has_pool, normalize_amounts, protocol_paused, read_pool, reserves,
+    set_protocol_paused, token_index, write_pool, Pool, PoolToken,
 };

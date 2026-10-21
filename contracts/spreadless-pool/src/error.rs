@@ -38,4 +38,9 @@ pub enum Error {
     // --- authority ---
     AmpControlLocked = 21, // amplification was permanently locked at creation
     OwnershipRenunciationDisabled = 22, // ownership must always be transferred, never removed
+
+    // --- amplification ramp ---
+    AmpRampTooShort = 23,   // ramp duration below MIN_RAMP_DURATION
+    AmpRampCooldown = 24,   // less than MIN_RAMP_DURATION since the last ramp started
+    AmpChangeTooLarge = 25, // target moves A by more than MAX_AMP_CHANGE
 }

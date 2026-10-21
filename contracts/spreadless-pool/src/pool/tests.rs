@@ -1,6 +1,6 @@
 use soroban_sdk::{testutils::Address as _, Address, Env, Vec};
 
-use super::amp::{is_valid_amp_factor, ramp_amp};
+use super::amp::{is_valid_amp_change, is_valid_amp_factor, ramp_amp};
 use super::fee::{
     is_valid_protocol_fee, is_valid_swap_fee, output_from_gross, output_from_net, protocol_share,
 };
@@ -107,6 +107,19 @@ fn amp_ramp_clamps_and_interpolates_in_both_directions() {
     assert_eq!(ramp_amp(1_000, 5_000, 100, 200, 150), 3_000 * AMP_PRECISION);
     assert_eq!(ramp_amp(5_000, 1_000, 100, 200, 150), 3_000 * AMP_PRECISION);
     assert_eq!(ramp_amp(1_000, 5_000, 100, 200, 999), 5_000 * AMP_PRECISION);
+}
+
+#[test]
+fn amp_change_is_bounded_to_ten_x_in_both_directions() {
+    assert!(is_valid_amp_change(100, 100));
+    assert!(is_valid_amp_change(100, 1_000));
+    assert!(!is_valid_amp_change(100, 1_001));
+    assert!(is_valid_amp_change(100, 10));
+    assert!(!is_valid_amp_change(100, 9));
+    assert!(is_valid_amp_change(1, 10));
+    assert!(!is_valid_amp_change(1, 11));
+    assert!(is_valid_amp_change(50_000, 5_000));
+    assert!(!is_valid_amp_change(50_000, 4_999));
 }
 
 #[test]

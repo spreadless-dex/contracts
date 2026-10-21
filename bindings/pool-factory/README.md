@@ -94,6 +94,7 @@ Registered-pool proxies:
 - `set_pool_protocol_fee({ pool_id, new_fee })`
 - `set_pool_beneficiary({ pool_id, new_beneficiary })`
 - `set_pool_amp_ramp({ pool_id, target_factor, duration })`
+- `stop_pool_amp_ramp({ pool_id })`
 - `pause_pool({ pool_id })`
 - `unpause_pool({ pool_id })`
 

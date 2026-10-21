@@ -156,15 +156,29 @@ pub trait SpreadlessPoolInterface {
 
     fn get_max_supply(e: Env) -> i128;
 
-    /// Whether the pool is paused (deposits and swaps blocked; exits remain open).
+    /// Whether the pool is paused by either the protocol or the owner (deposits
+    /// and swaps blocked; exits remain open).
     fn paused(e: Env) -> bool;
+
+    /// Whether the protocol controller's pause flag is set.
+    fn is_protocol_paused(e: Env) -> bool;
+
+    /// Whether the owner's pause flag is set.
+    fn is_owner_paused(e: Env) -> bool;
 
     // --- protocol administration (requires protocol-controller auth) ---
 
-    /// Start/replace a linear amp ramp toward `target_factor` (in `[1,50000]`)
-    /// on a protocol-managed pool. `duration == 0` applies it at once.
-    /// Reverts: `InvalidAmpFactor`, `AmpControlLocked`.
+    /// Start a linear amp ramp toward `target_factor` (in `[1,50000]`) on a
+    /// protocol-managed pool. `duration` must be at least one day, the target
+    /// within 10x of the current factor either way, and the previous ramp must
+    /// have started at least one day ago.
+    /// Reverts: `InvalidAmpFactor`, `AmpControlLocked`, `AmpRampTooShort`,
+    /// `AmpChangeTooLarge`, `AmpRampCooldown`.
     fn set_amp_ramp(e: Env, target_factor: u32, duration: u64);
+
+    /// Freeze `A` at its current factor, ending any ramp in progress. Restarts
+    /// the ramp cooldown. Reverts: `AmpControlLocked`.
+    fn stop_amp_ramp(e: Env);
 
     /// Set the protocol's cut of the swap fee (in `[0, 1e9]`).
     /// Reverts: `InvalidProtocolFee`.
@@ -173,11 +187,12 @@ pub trait SpreadlessPoolInterface {
     /// Set the address that receives the protocol fee.
     fn set_beneficiary(e: Env, beneficiary: Address);
 
-    /// Protocol-controller pause path. Uses the same shared pause flag as the
-    /// owner path.
+    /// Set the protocol pause flag. Independent of the owner's flag: the owner
+    /// cannot clear it. Reverts `EnforcedPause` if already set.
     fn protocol_pause(e: Env);
 
-    /// Protocol-controller unpause path.
+    /// Clear the protocol pause flag (the owner's flag is untouched).
+    /// Reverts `ExpectedPause` if not set.
     fn protocol_unpause(e: Env);
 
     // --- pool-owner administration ---
@@ -193,10 +208,11 @@ pub trait SpreadlessPoolInterface {
     /// Reverts: `UnknownToken`, `InvalidCap`.
     fn set_token_cap(e: Env, token: Address, max_cap: i128);
 
-    /// Pause the pool (blocks deposits and swaps, but never withdrawals).
+    /// Set the owner pause flag (blocks deposits and swaps, but never
+    /// withdrawals).
     fn pause(e: Env);
 
-    /// Resume a paused pool.
+    /// Clear the owner pause flag. Cannot lift a protocol pause.
     fn unpause(e: Env);
 }
 

@@ -109,23 +109,26 @@ Views:
 - `get_protocol_fee() -> u64`
 - `get_beneficiary() -> Address`
 - `get_max_supply() -> i128`
-- `paused() -> bool`
+- `paused() -> bool` (true if either pause flag is set)
+- `is_protocol_paused() -> bool` and `is_owner_paused() -> bool`
 
 Pool-owner operations:
 
 - `set_swap_fee(swap_fee)`
 - `set_max_supply(max_supply)`
 - `set_token_cap(token, max_cap)`
-- `pause()`
-- `unpause()`
+- `pause()` and `unpause()` (owner pause flag only; cannot lift a protocol
+  pause)
 
 Protocol-controller operations, normally invoked by router governance:
 
-- `set_amp_ramp(target_factor, duration)`
+- `set_amp_ramp(target_factor, duration)`: `duration` of at least one day,
+  target within 10x of the current `A`, at most one ramp start per day
+- `stop_amp_ramp()`: freeze `A` at its current value
 - `set_protocol_fee(protocol_fee)`
 - `set_beneficiary(beneficiary)`
-- `protocol_pause()`
-- `protocol_unpause()`
+- `protocol_pause()` and `protocol_unpause()` (protocol pause flag, separate
+  from the owner's)
 
 The pool also exposes OpenZeppelin's two-step ownership methods and SEP-41
 LP-token methods such as `balance`, `total_supply`, `approve`, `transfer`, and
@@ -142,7 +145,8 @@ Router operations:
 - `set_default_protocol_beneficiary(new_beneficiary)`
 - `set_pool_protocol_fee(pool_id, new_fee)`
 - `set_pool_beneficiary(pool_id, new_beneficiary)`
-- `set_pool_amp_ramp(pool_id, target_factor, duration)`
+- `set_pool_amp_ramp(pool_id, target_factor, duration)` and
+  `stop_pool_amp_ramp(pool_id)`
 - `pause_pool(pool_id)` and `unpause_pool(pool_id)`
 - `set_pool_wasm_hash(new_hash)`
 

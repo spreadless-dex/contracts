@@ -274,7 +274,9 @@ Inline JSDoc for each is available in your editor via `pool.` autocomplete.
 | `get_protocol_fee()` | `bigint` | Current protocol cut of the swap fee. |
 | `get_beneficiary()` | `string` | Current protocol-fee beneficiary. |
 | `get_max_supply()` | `bigint` | LP-token supply cap. |
-| `paused()` | `boolean` | Whether deposits and swaps are paused. |
+| `paused()` | `boolean` | Whether deposits and swaps are paused (by the protocol or the owner). |
+| `is_protocol_paused()` | `boolean` | Whether the protocol pause flag is set. |
+| `is_owner_paused()` | `boolean` | Whether the owner pause flag is set. |
 | `get_owner()` | `string \| undefined` | Current pool-owner address. |
 
 ### Swaps
@@ -309,7 +311,7 @@ Withdrawals remain available while the pool is paused.
 | `set_swap_fee` | `{ swap_fee }` — `1_000_000_000` = 100% |
 | `set_max_supply` | `{ max_supply }` — LP supply cap |
 | `set_token_cap` | `{ token, max_cap }` — per-token reserve cap, raw units |
-| `pause` / `unpause` | — |
+| `pause` / `unpause` | — owner pause flag only; cannot lift a protocol pause |
 
 ### Protocol-controller administration
 
@@ -318,10 +320,11 @@ reached through router governance proxies.
 
 | Method | Args |
 | --- | --- |
-| `set_amp_ramp` | `{ target_factor, duration }` — only for `ProtocolManaged` pools |
+| `set_amp_ramp` | `{ target_factor, duration }` — only for `ProtocolManaged` pools; `duration` ≥ 86 400 s, target within 10x of the current `A`, at most one ramp start per day |
+| `stop_amp_ramp` | — freezes `A` at its current value; restarts the one-day cooldown |
 | `set_protocol_fee` | `{ protocol_fee }` — cut of the swap fee routed to beneficiary |
 | `set_beneficiary` | `{ beneficiary }` |
-| `protocol_pause` / `protocol_unpause` | — |
+| `protocol_pause` / `protocol_unpause` | — separate flag from the owner's |
 
 ### Ownership (two-step)
 
@@ -351,6 +354,9 @@ pool-specific codes:
 | 20 | `DirectLpBurnDisabled` | LP shares can only exit via `withdraw*`. |
 | 21 | `AmpControlLocked` | A ramp was requested for a permanently locked pool. |
 | 22 | `OwnershipRenunciationDisabled` | Ownership must be transferred, not removed. |
+| 23 | `AmpRampTooShort` | Ramp `duration` is under one day. |
+| 24 | `AmpRampCooldown` | Less than a day since the last ramp started (or was stopped). |
+| 25 | `AmpChangeTooLarge` | Target `A` is more than 10x above or below the current `A`. |
 
 The full list, plus the `Errors`, `PausableError` (1000–1001), `OwnableError`
 (2100–2102), `RoleTransferError` (2200–2203), and `FungibleTokenError` (100–114)
