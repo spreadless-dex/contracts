@@ -1743,6 +1743,7 @@ dependencies = [
  "soroban-sdk",
  "spreadless-pool-interface",
  "stellar-access",
+ "stellar-contract-utils",
  "stellar-macros",
 ]
 

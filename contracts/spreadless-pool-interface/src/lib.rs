@@ -29,7 +29,7 @@
 //! - **LP shares** are the pool contract's own SEP-41 token (9 decimals).
 //! - **Token order / indices**: `tokens` is sorted ascending at init; reserves,
 //!   `amounts_in`, and `min_amounts_out` are all in that order.
-//! - Failures revert with a typed `Error` (codes 1..=22, see `error.rs`);
+//! - Failures revert with a typed `Error` (codes 1..=26, see `error.rs`);
 //!   missing authorization reverts with a host auth error.
 
 #![allow(dead_code)] // trait methods aren't "used" on a plain host build
@@ -225,6 +225,11 @@ pub trait SpreadlessPoolInterface {
 //   transfer_ownership(e, new_owner: Address, live_until_ledger: u32)  // owner auth
 //   accept_ownership(e)                                                // pending-owner auth
 //   renounce_ownership(e)                                              // always reverts
+//
+// Code upgrades (stellar_contract_utils::upgradeable::Upgradeable):
+//   upgrade(e, new_wasm_hash: BytesN<32>, operator: Address)
+//     // `operator` must be the protocol controller and authorize the call;
+//     // reverts `NotProtocolController` otherwise. Storage is preserved.
 //
 // SEP-41 LP-share token — the pool IS its own token, 9 decimals
 // (stellar_tokens::fungible::{FungibleToken, FungibleBurnable}):

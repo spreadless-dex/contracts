@@ -65,7 +65,13 @@ pub trait SpreadlessRouterInterface {
     /// Default copied into newly created pools; existing pools are unaffected.
     fn get_default_protocol_beneficiary(e: Env) -> Address;
 
+    /// WASM used for pools created from now on. Existing pools keep their code
+    /// until upgraded with `upgrade_pool`.
     fn set_pool_wasm_hash(e: Env, new_hash: BytesN<32>);
+
+    /// Replace a registered pool's code in place (storage is preserved). The
+    /// hash must already be uploaded. Reverts `PoolNotRegistered`.
+    fn upgrade_pool(e: Env, pool_id: u32, new_wasm_hash: BytesN<32>);
 
     fn set_default_protocol_fee(e: Env, new_fee: u64);
 

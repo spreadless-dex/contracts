@@ -53,6 +53,7 @@ trait RouterInterface {
     fn get_default_protocol_fee(e: Env) -> u64;
     fn get_default_protocol_beneficiary(e: Env) -> Address;
     fn set_pool_wasm_hash(e: Env, new_hash: BytesN<32>);
+    fn upgrade_pool(e: Env, pool_id: u32, new_wasm_hash: BytesN<32>);
     fn set_default_protocol_fee(e: Env, new_fee: u64);
     fn set_default_protocol_beneficiary(e: Env, new_beneficiary: Address);
     fn set_pool_protocol_fee(e: Env, pool_id: u32, new_fee: u64);
@@ -61,6 +62,14 @@ trait RouterInterface {
     fn stop_pool_amp_ramp(e: Env, pool_id: u32);
     fn pause_pool(e: Env, pool_id: u32);
     fn unpause_pool(e: Env, pool_id: u32);
+    fn get_owner(e: Env) -> Option<Address>;
+}
+
+// OpenZeppelin's `Upgradeable` entrypoint, exposed by both the pool and router.
+#[contractclient(name = "UpgradeClient")]
+#[allow(dead_code)]
+trait UpgradeInterface {
+    fn upgrade(e: Env, new_wasm_hash: BytesN<32>, operator: Address);
 }
 
 // These methods are explicitly listed as part of the pool's public interface.
@@ -291,6 +300,7 @@ fn seed_pool(f: &PoolFixture, each: i128) -> i128 {
 struct RouterFixture {
     env: Env,
     router: Address,
+    owner: Address,
     beneficiary: Address,
     creator: Address,
     user: Address,
@@ -337,6 +347,7 @@ fn router_fixture() -> RouterFixture {
     RouterFixture {
         env,
         router,
+        owner,
         beneficiary,
         creator,
         user,
@@ -1013,6 +1024,7 @@ fn router_creation_and_administration_require_authorization() {
         .try_swap_exact_in(&f.user, &f.token_0, &path, &1_000_000, &0)
         .is_err());
     assert!(router.try_set_default_protocol_fee(&200_000_000).is_err());
+    assert!(router.try_upgrade_pool(&0, &f.pool_wasm_hash).is_err());
 
     assert_eq!(router.next_pool_id(), next_id_before);
     assert_eq!(router.get_default_protocol_fee(), default_fee_before);
@@ -1272,6 +1284,7 @@ fn router_pool_administration_rejects_unknown_ids() {
     assert!(router.try_set_pool_amp_ramp(&999, &200, &DAY).is_err());
     assert!(router.try_pause_pool(&999).is_err());
     assert!(router.try_unpause_pool(&999).is_err());
+    assert!(router.try_upgrade_pool(&999, &f.pool_wasm_hash).is_err());
     assert_eq!(router.pool_at(&999), None);
 }
 
@@ -1326,4 +1339,88 @@ fn invalid_pool_configuration_does_not_register_or_consume_an_id() {
 
     assert_eq!(router.next_pool_id(), 0);
     assert_eq!(router.pool_at(&0), None);
+}
+
+const POOL_NOT_PROTOCOL_CONTROLLER: u32 = 26;
+const ROUTER_POOL_NOT_REGISTERED: u32 = 3;
+const ROUTER_INVALID_UPGRADE_OPERATOR: u32 = 6;
+
+#[test]
+fn router_upgrades_a_registered_pool_in_place() {
+    let f = router_fixture();
+    let router = RouterClient::new(&f.env, &f.router);
+    let pool_address = create_pool(
+        &f,
+        &[f.token_0.clone(), f.token_1.clone()],
+        AmpControl::Locked,
+    );
+    let pool = SpreadlessPoolInterfaceClient::new(&f.env, &pool_address);
+    pool.deposit(&f.user, &amounts(&f.env, &[500_000_000, 500_000_000]), &0);
+    let reserves_before = pool.get_reserves();
+
+    router.upgrade_pool(&0, &f.pool_wasm_hash);
+
+    assert_eq!(pool.get_reserves(), reserves_before);
+    assert_eq!(pool.get_protocol_controller(), f.router);
+    assert!(pool.swap_exact_in(&f.user, &f.token_0, &f.token_1, &1_000_000, &0) > 0);
+
+    // Upgrading to different code really replaces it: the router WASM has no
+    // pool entrypoints.
+    let router_wasm_hash = f.env.deployer().upload_contract_wasm(ROUTER_WASM);
+    router.upgrade_pool(&0, &router_wasm_hash);
+    assert!(pool.try_get_reserves().is_err());
+}
+
+#[test]
+fn only_the_protocol_controller_can_upgrade_a_pool() {
+    let f = pool_fixture();
+    let pool = SpreadlessPoolInterfaceClient::new(&f.env, &f.pool);
+    let upgrader = UpgradeClient::new(&f.env, &f.pool);
+    let pool_wasm_hash = f.env.deployer().upload_contract_wasm(POOL_WASM);
+    seed_pool(&f, 500_000_000);
+    let reserves_before = pool.get_reserves();
+
+    assert_contract_error(
+        upgrader.try_upgrade(&pool_wasm_hash, &f.owner),
+        POOL_NOT_PROTOCOL_CONTROLLER,
+    );
+
+    f.env.set_auths(&[]);
+    assert!(upgrader
+        .try_upgrade(&pool_wasm_hash, &f.controller)
+        .is_err());
+
+    f.env.mock_all_auths();
+    upgrader.upgrade(&pool_wasm_hash, &f.controller);
+    assert_eq!(pool.get_reserves(), reserves_before);
+}
+
+#[test]
+fn only_the_router_owner_can_upgrade_the_router() {
+    let f = router_fixture();
+    let router = RouterClient::new(&f.env, &f.router);
+    let upgrader = UpgradeClient::new(&f.env, &f.router);
+    let router_wasm_hash = f.env.deployer().upload_contract_wasm(ROUTER_WASM);
+    create_pool(
+        &f,
+        &[f.token_0.clone(), f.token_1.clone()],
+        AmpControl::Locked,
+    );
+
+    assert_contract_error(
+        upgrader.try_upgrade(&router_wasm_hash, &f.creator),
+        ROUTER_INVALID_UPGRADE_OPERATOR,
+    );
+
+    f.env.set_auths(&[]);
+    assert!(upgrader.try_upgrade(&router_wasm_hash, &f.owner).is_err());
+
+    f.env.mock_all_auths();
+    upgrader.upgrade(&router_wasm_hash, &f.owner);
+    assert_eq!(router.next_pool_id(), 1);
+    assert_eq!(router.get_owner(), Some(f.owner.clone()));
+    assert_contract_error(
+        router.try_upgrade_pool(&999, &f.pool_wasm_hash),
+        ROUTER_POOL_NOT_REGISTERED,
+    );
 }

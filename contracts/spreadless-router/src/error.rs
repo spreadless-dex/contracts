@@ -9,4 +9,5 @@ pub enum Error {
     PoolNotRegistered = 3,
     OwnershipRenunciationDisabled = 4,
     EmptySwapPath = 5,
+    InvalidUpgradeOperator = 6,
 }

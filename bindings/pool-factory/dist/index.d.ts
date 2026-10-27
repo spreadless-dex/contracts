@@ -20,6 +20,9 @@ export declare const Errors: {
     5: {
         message: string;
     };
+    6: {
+        message: string;
+    };
 };
 /**
  * One leg of an exact-input routed swap.
@@ -75,6 +78,13 @@ export interface Client {
         id: u32;
     }, options?: MethodOptions) => Promise<AssembledTransaction<Option<string>>>;
     /**
+     * Construct and simulate a upgrade transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+     */
+    upgrade: ({ new_wasm_hash, operator }: {
+        new_wasm_hash: Buffer;
+        operator: string;
+    }, options?: MethodOptions) => Promise<AssembledTransaction<null>>;
+    /**
      * Construct and simulate a get_owner transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
      * Returns `Some(Address)` if ownership is set, or `None` if ownership has
      * been renounced.
@@ -113,6 +123,13 @@ export interface Client {
      */
     unpause_pool: ({ pool_id }: {
         pool_id: u32;
+    }, options?: MethodOptions) => Promise<AssembledTransaction<null>>;
+    /**
+     * Construct and simulate a upgrade_pool transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+     */
+    upgrade_pool: ({ pool_id, new_wasm_hash }: {
+        pool_id: u32;
+        new_wasm_hash: Buffer;
     }, options?: MethodOptions) => Promise<AssembledTransaction<null>>;
     /**
      * Construct and simulate a swap_exact_in transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
@@ -261,11 +278,13 @@ export declare class Client extends ContractClient {
     constructor(options: ContractClientOptions);
     readonly fromJSON: {
         pool_at: (json: string) => AssembledTransaction<Option<string>>;
+        upgrade: (json: string) => AssembledTransaction<null>;
         get_owner: (json: string) => AssembledTransaction<Option<string>>;
         pause_pool: (json: string) => AssembledTransaction<null>;
         create_pool: (json: string) => AssembledTransaction<string>;
         next_pool_id: (json: string) => AssembledTransaction<number>;
         unpause_pool: (json: string) => AssembledTransaction<null>;
+        upgrade_pool: (json: string) => AssembledTransaction<null>;
         swap_exact_in: (json: string) => AssembledTransaction<bigint>;
         accept_ownership: (json: string) => AssembledTransaction<null>;
         set_pool_amp_ramp: (json: string) => AssembledTransaction<null>;

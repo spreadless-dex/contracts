@@ -5,6 +5,7 @@ use soroban_sdk::{
 };
 use spreadless_pool_interface::SpreadlessPoolInterfaceClient;
 use stellar_access::ownable::{self, Ownable};
+use stellar_contract_utils::upgradeable::{self, Upgradeable, UpgradeableClient};
 use stellar_macros::only_owner;
 
 use crate::error::Error;
@@ -83,6 +84,14 @@ pub struct PoolPauseUpdated {
     #[topic]
     pub pool: Address,
     pub paused: bool,
+}
+
+#[contractevent]
+#[derive(Clone)]
+pub struct PoolUpgraded {
+    #[topic]
+    pub pool: Address,
+    pub new_wasm_hash: BytesN<32>,
 }
 
 #[contract]
@@ -230,6 +239,17 @@ impl SpreadlessRouterInterface for SpreadlessRouter {
     }
 
     #[only_owner]
+    fn upgrade_pool(e: Env, pool_id: u32, new_wasm_hash: BytesN<32>) {
+        let pool = registered_pool(&e, pool_id);
+        UpgradeableClient::new(&e, &pool).upgrade(&new_wasm_hash, &e.current_contract_address());
+        PoolUpgraded {
+            pool,
+            new_wasm_hash,
+        }
+        .publish(&e);
+    }
+
+    #[only_owner]
     fn set_default_protocol_fee(e: Env, new_fee: u64) {
         require_valid_protocol_fee(&e, new_fee);
         let old_fee = storage::default_protocol_fee(&e);
@@ -308,6 +328,20 @@ impl SpreadlessRouterInterface for SpreadlessRouter {
 impl Ownable for SpreadlessRouter {
     fn renounce_ownership(e: &Env) {
         panic_with_error!(e, Error::OwnershipRenunciationDisabled);
+    }
+}
+
+// The router's address is every pool's immutable protocol controller, so it is
+// upgraded in place rather than redeployed. Storage is preserved; the new WASM
+// must read the same layout (or migrate it) and keep this entrypoint.
+#[contractimpl]
+impl Upgradeable for SpreadlessRouter {
+    fn upgrade(e: &Env, new_wasm_hash: BytesN<32>, operator: Address) {
+        let owner = ownable::enforce_owner_auth(e);
+        if operator != owner {
+            panic_with_error!(e, Error::InvalidUpgradeOperator);
+        }
+        upgradeable::upgrade(e, &new_wasm_hash);
     }
 }
 

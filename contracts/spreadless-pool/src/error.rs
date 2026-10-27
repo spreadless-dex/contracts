@@ -43,4 +43,7 @@ pub enum Error {
     AmpRampTooShort = 23,   // ramp duration below MIN_RAMP_DURATION
     AmpRampCooldown = 24,   // less than MIN_RAMP_DURATION since the last ramp started
     AmpChangeTooLarge = 25, // target moves A by more than MAX_AMP_CHANGE
+
+    // --- upgrades ---
+    NotProtocolController = 26, // upgrade operator is not the protocol controller
 }
