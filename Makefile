@@ -48,6 +48,7 @@ OWNER          ?=
 BENEFICIARY    ?= $(OWNER)
 PROTOCOL_FEE   ?= 330000000                # 33% cut of the swap fee (1e9 == 100%)
 SWAP_FEE       ?= 10000000                 # 1% pool swap fee (1e9 == 100%)
+INCLUSION_FEE  ?= 100                      # max inclusion fee per tx in stroops; raise on mainnet
 
 .DEFAULT_GOAL := build
 .PHONY: all build build-pool build-router build-test-token bindings bindings-pool bindings-router optimize optimize-pool optimize-router optimize-test-token deploy deploy-router deploy-tokens deploy-testnet testnet-evidence testnet-rehearsal setup keys fund clean fmt fmt-check lint help
@@ -113,7 +114,7 @@ deploy: deploy-router
 
 ## deploy-router: upload pool WASM and deploy the router with protocol defaults
 deploy-router:
-	STELLAR=$(STELLAR) NETWORK=$(NETWORK) SOURCE=$(SOURCE) RUST_VERSION=$(RUST_VERSION) TARGET_TRIPLE=$(TARGET_TRIPLE) OWNER='$(OWNER)' BENEFICIARY='$(BENEFICIARY)' PROTOCOL_FEE=$(PROTOCOL_FEE) SWAP_FEE=$(SWAP_FEE) scripts/deploy-router.sh
+	STELLAR=$(STELLAR) NETWORK=$(NETWORK) SOURCE=$(SOURCE) RUST_VERSION=$(RUST_VERSION) TARGET_TRIPLE=$(TARGET_TRIPLE) OWNER='$(OWNER)' BENEFICIARY='$(BENEFICIARY)' PROTOCOL_FEE=$(PROTOCOL_FEE) SWAP_FEE=$(SWAP_FEE) INCLUSION_FEE=$(INCLUSION_FEE) scripts/deploy-router.sh
 
 ## deploy-tokens: deploy every catalog token as custom Soroban token and SAC (testnet only)
 deploy-tokens:

@@ -9,6 +9,7 @@ TARGET_TRIPLE="${TARGET_TRIPLE:-wasm32v1-none}"
 DEPLOYMENTS_FILE="${DEPLOYMENTS_FILE:-deployments/${NETWORK}.json}"
 PROTOCOL_FEE="${PROTOCOL_FEE:-330000000}"
 SWAP_FEE="${SWAP_FEE:-10000000}"
+INCLUSION_FEE="${INCLUSION_FEE:-100}"
 
 require_cmd() {
   command -v "$1" >/dev/null 2>&1 || {
@@ -38,12 +39,14 @@ echo "Uploading the pool WASM to ${NETWORK}..."
 pool_wasm_hash="$("$STELLAR" contract upload \
   --network "$NETWORK" \
   --source-account "$SOURCE" \
+  --inclusion-fee "$INCLUSION_FEE" \
   --wasm "$pool_wasm")"
 
 echo "Deploying the router with protocol defaults..."
 router="$("$STELLAR" contract deploy \
   --network "$NETWORK" \
   --source-account "$SOURCE" \
+  --inclusion-fee "$INCLUSION_FEE" \
   --wasm "$router_wasm" \
   -- \
   --owner "$owner" \
