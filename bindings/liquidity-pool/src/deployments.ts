@@ -49,7 +49,7 @@ export const deployments: Record<DeploymentNetwork, NetworkDeployment> = {
   "testnet": {
     "network": "testnet",
     "network_passphrase": "Test SDF Network ; September 2015",
-    "deployed_at": "2026-09-05T18:54:52Z",
+    "deployed_at": "2026-10-29T11:22:50Z",
     "source_identity": "perps-testnet",
     "deployer": "GBQNJHJJRTKU43GOW34BQXLMTRZFOZERDGQPBUZGXTJK3HQEEDXXL73B",
     "contracts": {
@@ -167,9 +167,9 @@ export const deployments: Record<DeploymentNetwork, NetworkDeployment> = {
         }
       ],
       "router": {
-        "address": "CA4VB4SJQAPWBRTMEHCTX7GZ7KC2DGS7PXV6BEZUI3WUOKRGOQ7VCV6M",
+        "address": "CB3VP64F4BOHFQKYSW4OWJQJIBSHISEA3V2VGJ4NAS34MGDFIKXZN77F",
         "owner": "GBQNJHJJRTKU43GOW34BQXLMTRZFOZERDGQPBUZGXTJK3HQEEDXXL73B",
-        "pool_wasm_hash": "52dd16bb8eed388a1914922488533a5e4eb2fe69575662b5c7a141e4d7a7ac20",
+        "pool_wasm_hash": "ae835560f930e73b3ac8ce0ab2b26543b815eb6bb61b0d87b894f4dc8dc6e8df",
         "default_protocol_fee": 330000000,
         "default_protocol_beneficiary": "GBQNJHJJRTKU43GOW34BQXLMTRZFOZERDGQPBUZGXTJK3HQEEDXXL73B",
         "permissionless_creation": true
@@ -747,7 +747,19 @@ export const deployments: Record<DeploymentNetwork, NetworkDeployment> = {
         "source": "config/tokens.json",
         "holder": "GBQNJHJJRTKU43GOW34BQXLMTRZFOZERDGQPBUZGXTJK3HQEEDXXL73B",
         "sac_issuer": "GCING6MWLKCAUEQG3ZMIDR2YZH2GG2QANN32DM5KJBIIRWRWTGIQP534"
-      }
+      },
+      "previous_routers": [
+        {
+          "address": "CA4VB4SJQAPWBRTMEHCTX7GZ7KC2DGS7PXV6BEZUI3WUOKRGOQ7VCV6M",
+          "owner": "GBQNJHJJRTKU43GOW34BQXLMTRZFOZERDGQPBUZGXTJK3HQEEDXXL73B",
+          "pool_wasm_hash": "52dd16bb8eed388a1914922488533a5e4eb2fe69575662b5c7a141e4d7a7ac20",
+          "default_protocol_fee": 330000000,
+          "default_protocol_beneficiary": "GBQNJHJJRTKU43GOW34BQXLMTRZFOZERDGQPBUZGXTJK3HQEEDXXL73B",
+          "permissionless_creation": true,
+          "replaced_at": "2026-10-29T11:22:31Z",
+          "reason": "pre-upgradeability build (before #5/#7)"
+        }
+      ]
     },
     "pool_defaults": {
       "swap_fee": 10000000

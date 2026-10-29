@@ -50,7 +50,7 @@ PROTOCOL_FEE   ?= 330000000                # 33% cut of the swap fee (1e9 == 100
 SWAP_FEE       ?= 10000000                 # 1% pool swap fee (1e9 == 100%)
 
 .DEFAULT_GOAL := build
-.PHONY: all build build-pool build-router build-test-token bindings bindings-pool bindings-router optimize optimize-pool optimize-router optimize-test-token deploy deploy-router deploy-tokens deploy-testnet testnet-evidence setup keys fund clean fmt fmt-check lint help
+.PHONY: all build build-pool build-router build-test-token bindings bindings-pool bindings-router optimize optimize-pool optimize-router optimize-test-token deploy deploy-router deploy-tokens deploy-testnet testnet-evidence testnet-rehearsal setup keys fund clean fmt fmt-check lint help
 
 ## all: build all production contracts
 all: build
@@ -126,6 +126,10 @@ deploy-testnet:
 ## testnet-evidence: run the swap-evidence matrix; writes docs/testnet-swap-evidence.md
 testnet-evidence:
 	STELLAR=$(STELLAR) NETWORK=$(NETWORK) SOURCE=$(SOURCE) scripts/testnet-swap-evidence.sh
+
+## testnet-rehearsal: rehearse pool lifecycle, pauses, upgrades and multisig ownership on testnet
+testnet-rehearsal:
+	STELLAR=$(STELLAR) NETWORK=$(NETWORK) SOURCE=$(SOURCE) TARGET_TRIPLE=$(TARGET_TRIPLE) scripts/testnet-rehearsal.sh
 
 ## setup: install a contract-safe rust toolchain + the wasm build target
 setup:
