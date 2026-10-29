@@ -46,17 +46,39 @@ const testnet = deployments.testnet;
 const routerId = testnet.contracts.router?.address;
 const defaultSwapFee = testnet.pool_defaults?.swap_fee;
 const usdc = testnet.contracts.tokens?.find((token) => token.id === "usdc");
+
+const mainnetRouterId = deployments.mainnet.contracts.router?.address;
 ```
 
 The registry is also available from `@spreadless-dex/sdk/deployments`. RPC URLs
 and network passphrases still come from the consuming application.
+
+### Mainnet
+
+> **Unaudited.** The mainnet contracts are a guarded test deployment while the
+> audit runs. Pool creation through the router is permissionless; only the pools
+> listed in [`deployments/mainnet.json`](https://github.com/spreadless-dex/contracts/blob/main/deployments/mainnet.json)
+> are operated by Spreadless.
+
+| What | Value |
+| --- | --- |
+| Router | `CDEP4I2XQAMPXGER67LJMPZTUXVR3YFA4V6GW7BSMRI3DOLAEA3DR6ER` |
+| USD 3pool (pool 0) | `CAZE5GVMH5332L6FEGVPPDLEPVYUFGQB7ZOCH2OKKBJCBYZQ5FGKZN7L` |
+| Pool tokens (canonical order) | USDT0 `CBSJZEIO…R26YF`, PYUSD `CCCRWH6Q…PHGU2`, USDC `CCW67TSZ…SJMI75` |
+| Limits | 25,000 cap per token, 75,000 LP max supply, amp 100, 0.01% swap fee |
+| Network passphrase | `Public Global Stellar Network ; September 2015` |
+
+All three tokens are issuer-controlled stablecoins: their issuers can freeze
+balances (including the pool's), and PYUSD and USDT0 also allow clawback.
+
+### Testnet
 
 The older pool below predates the current router ABI and remains as historical
 execution evidence. New pools should be created through the exported router.
 
 | What | Value |
 | --- | --- |
-| Active router | `CA4VB4SJQAPWBRTMEHCTX7GZ7KC2DGS7PXV6BEZUI3WUOKRGOQ7VCV6M` |
+| Active router | `CB3VP64F4BOHFQKYSW4OWJQJIBSHISEA3V2VGJ4NAS34MGDFIKXZN77F` |
 | Default protocol share | 33% of the pool swap fee |
 | Pool deployment swap fee | 1% |
 | Pool contract | `CCAD3EH4P74PVYL3IC6ND7RSV6NYYOMUMNKRNVBJYOVIZP7Z2QS5XTSN` |
