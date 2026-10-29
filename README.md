@@ -5,11 +5,11 @@ assets with low slippage. It supports 2 or more tokens, mints its own SEP-41 LP
 share token, and keeps pool accounting in one contract.
 
 The Spreadless router contract permissionlessly deploys pools from a
-governance-selected pool WASM hash and assigns each pool an on-chain
-ID. The authenticated creator owns the new pool; identical token baskets are
+governance-selected pool WASM hash and assigns each pool an on-chain ID. The
+authenticated creator owns the new pool; identical token baskets are
 intentionally allowed. The router is also each
 pool's immutable protocol controller, while router ownership determines who
-may exercise that authority.
+may exercise that authority, including upgrading pool code.
 
 The contract is implemented in Rust with `soroban-sdk` 26 and OpenZeppelin
 Stellar helpers for ownership, pause control, and token behavior.
@@ -129,6 +129,8 @@ Protocol-controller operations, normally invoked by router governance:
 - `set_beneficiary(beneficiary)`
 - `protocol_pause()` and `protocol_unpause()` (protocol pause flag, separate
   from the owner's)
+- `upgrade(new_wasm_hash, operator)`: `operator` must be the protocol
+  controller; the pool owner cannot upgrade its pool
 
 The pool also exposes OpenZeppelin's two-step ownership methods and SEP-41
 LP-token methods such as `balance`, `total_supply`, `approve`, `transfer`, and
@@ -148,7 +150,11 @@ Router operations:
 - `set_pool_amp_ramp(pool_id, target_factor, duration)` and
   `stop_pool_amp_ramp(pool_id)`
 - `pause_pool(pool_id)` and `unpause_pool(pool_id)`
-- `set_pool_wasm_hash(new_hash)`
+- `set_pool_wasm_hash(new_hash)` (future pools only)
+- `upgrade_pool(pool_id, new_wasm_hash)`: replace a registered pool's code in
+  place
+- `upgrade(new_wasm_hash, operator)`: replace the router's own code in place;
+  `operator` must be the owner
 
 ## Parameters
 
@@ -301,8 +307,8 @@ those values into the new pool; later default changes affect only future pools.
 Router governance can update a registered pool's protocol fee, beneficiary,
 delegated amplification, and pause state through ID-based proxy calls. Pool
 configuration changes never alter router defaults. Updating the configured
-pool WASM hash also affects only future creations. Pool creation does not seed
-liquidity.
+pool WASM hash also affects only future creations; existing pools move to new
+code only through `upgrade_pool`. Pool creation does not seed liquidity.
 
 Create and fund a deployment identity for the configured network:
 
@@ -338,10 +344,15 @@ classic Stellar asset wrapped by SAC, in the active pool recorded in
   can be represented in the internal 9-decimal scale.
 - Reserve caps and LP supply caps are enforced on-chain.
 - Pausing blocks deposits and swaps. Proportional and single-token withdrawals
-  remain available so liquidity providers always retain an exit path. Either
-  the pool owner or protocol governance may pause or unpause the shared flag.
+  remain available so liquidity providers always retain an exit path. The pool
+  owner and protocol governance each have their own pause flag, and neither can
+  clear the other's.
 - Factory and pool ownership cannot be renounced. Use the OpenZeppelin two-step
   ownership transfer, including when moving governance to a multisig wallet.
+- The router and every pool are upgradeable by router governance. Upgrades keep
+  storage and skip constructors, so a new WASM must read the existing storage
+  layout (or migrate it) and keep its `upgrade` entrypoint, or the contract
+  loses upgradeability.
 - There is no minimum-liquidity lock. The usual first-depositor inflation attack
   is mitigated structurally instead: reserves are tracked internally (direct
   token donations do not change them), the first deposit must fund every token,

@@ -1,11 +1,12 @@
 #![allow(dead_code, clippy::too_many_arguments)]
 
 use soroban_sdk::{
-    contract, contractevent, contractimpl, contractmeta, panic_with_error, token, Address, Env,
-    MuxedAddress, String, Vec,
+    contract, contractevent, contractimpl, contractmeta, panic_with_error, token, Address, BytesN,
+    Env, MuxedAddress, String, Vec,
 };
 use stellar_access::ownable::{self, Ownable};
 use stellar_contract_utils::pausable::{self, PausableError};
+use stellar_contract_utils::upgradeable::{self, Upgradeable};
 use stellar_macros::only_owner;
 use stellar_tokens::fungible::{burnable::FungibleBurnable, capped, Base, FungibleToken};
 
@@ -940,5 +941,22 @@ impl FungibleBurnable for SpreadlessPool {
 impl Ownable for SpreadlessPool {
     fn renounce_ownership(e: &Env) {
         panic_with_error!(e, Error::OwnershipRenunciationDisabled);
+    }
+}
+
+// Code upgrades are reserved for the protocol controller (the router, itself
+// owned by the protocol multisig). The pool owner is whoever created the pool,
+// so it must never be able to replace the code holding other LPs' funds.
+// Storage is preserved across upgrades; the new WASM must read the same layout
+// (or migrate it) and keep an upgrade entrypoint.
+#[contractimpl]
+impl Upgradeable for SpreadlessPool {
+    fn upgrade(e: &Env, new_wasm_hash: BytesN<32>, operator: Address) {
+        let pool = pool::read_pool(e);
+        if operator != pool.protocol_controller {
+            panic_with_error!(e, Error::NotProtocolController);
+        }
+        operator.require_auth();
+        upgradeable::upgrade(e, &new_wasm_hash);
     }
 }

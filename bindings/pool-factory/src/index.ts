@@ -38,8 +38,10 @@ export const Errors = {
   2: {message:"InvalidProtocolFee"},
   3: {message:"PoolNotRegistered"},
   4: {message:"OwnershipRenunciationDisabled"},
-  5: {message:"EmptySwapPath"}
+  5: {message:"EmptySwapPath"},
+  6: {message:"InvalidUpgradeOperator"}
 }
+
 
 
 
@@ -53,7 +55,7 @@ export const Errors = {
 
 /**
  * One leg of an exact-input routed swap.
- *
+ * 
  * `token_in` is implicit: it is the router's `token_in` for the first hop and
  * the previous hop's `token_out` thereafter.
  */
@@ -90,12 +92,17 @@ export interface Client {
   pool_at: ({id}: {id: u32}, options?: MethodOptions) => Promise<AssembledTransaction<Option<string>>>
 
   /**
+   * Construct and simulate a upgrade transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+   */
+  upgrade: ({new_wasm_hash, operator}: {new_wasm_hash: Buffer, operator: string}, options?: MethodOptions) => Promise<AssembledTransaction<null>>
+
+  /**
    * Construct and simulate a get_owner transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
    * Returns `Some(Address)` if ownership is set, or `None` if ownership has
    * been renounced.
-   *
+   * 
    * # Arguments
-   *
+   * 
    * * `e` - Access to the Soroban environment.
    */
   get_owner: (options?: MethodOptions) => Promise<AssembledTransaction<Option<string>>>
@@ -121,6 +128,11 @@ export interface Client {
   unpause_pool: ({pool_id}: {pool_id: u32}, options?: MethodOptions) => Promise<AssembledTransaction<null>>
 
   /**
+   * Construct and simulate a upgrade_pool transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+   */
+  upgrade_pool: ({pool_id, new_wasm_hash}: {pool_id: u32, new_wasm_hash: Buffer}, options?: MethodOptions) => Promise<AssembledTransaction<null>>
+
+  /**
    * Construct and simulate a swap_exact_in transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
    */
   swap_exact_in: ({to, token_in, path, amount_in, min_out}: {to: string, token_in: string, path: Array<SwapHop>, amount_in: i128, min_out: i128}, options?: MethodOptions) => Promise<AssembledTransaction<i128>>
@@ -128,18 +140,18 @@ export interface Client {
   /**
    * Construct and simulate a accept_ownership transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
    * Accepts a pending ownership transfer.
-   *
+   * 
    * # Arguments
-   *
+   * 
    * * `e` - Access to the Soroban environment.
-   *
+   * 
    * # Errors
-   *
+   * 
    * * [`crate::role_transfer::RoleTransferError::NoPendingTransfer`] - If
    * there is no pending transfer to accept.
-   *
+   * 
    * # Events
-   *
+   * 
    * * topics - `["ownership_transfer_completed"]`
    * * data - `[new_owner: Address]`
    */
@@ -173,19 +185,19 @@ export interface Client {
   /**
    * Construct and simulate a transfer_ownership transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
    * Initiates a 2-step ownership transfer to a new address.
-   *
+   * 
    * Requires authorization from the current owner. The new owner must later
    * call `accept_ownership()` to complete the transfer.
-   *
+   * 
    * # Arguments
-   *
+   * 
    * * `e` - Access to the Soroban environment.
    * * `new_owner` - The proposed new owner.
    * * `live_until_ledger` - Ledger number until which the new owner can
    * accept. A value of `0` cancels any pending transfer.
-   *
+   * 
    * # Errors
-   *
+   * 
    * * [`OwnableError::OwnerNotSet`] - If the owner is not set.
    * * [`crate::role_transfer::RoleTransferError::NoPendingTransfer`] - If
    * trying to cancel a transfer that doesn't exist.
@@ -194,9 +206,9 @@ export interface Client {
    * * [`crate::role_transfer::RoleTransferError::InvalidPendingAccount`] -
    * If the specified pending account is not the same as the provided `new`
    * address.
-   *
+   * 
    * # Notes
-   *
+   * 
    * * Authorization for the current owner is required.
    */
   transfer_ownership: ({new_owner, live_until_ledger}: {new_owner: string, live_until_ledger: u32}, options?: MethodOptions) => Promise<AssembledTransaction<null>>
@@ -251,18 +263,21 @@ export class Client extends ContractClient {
   }
   constructor(public readonly options: ContractClientOptions) {
     super(
-      new ContractSpec([ "AAAABAAAAAAAAAAAAAAABUVycm9yAAAAAAAABQAAAAAAAAASTmV4dFBvb2xJZE92ZXJmbG93AAAAAAABAAAAAAAAABJJbnZhbGlkUHJvdG9jb2xGZWUAAAAAAAIAAAAAAAAAEVBvb2xOb3RSZWdpc3RlcmVkAAAAAAAAAwAAAAAAAAAdT3duZXJzaGlwUmVudW5jaWF0aW9uRGlzYWJsZWQAAAAAAAAEAAAAAAAAAA1FbXB0eVN3YXBQYXRoAAAAAAAABQ==",
+      new ContractSpec([ "AAAABAAAAAAAAAAAAAAABUVycm9yAAAAAAAABgAAAAAAAAASTmV4dFBvb2xJZE92ZXJmbG93AAAAAAABAAAAAAAAABJJbnZhbGlkUHJvdG9jb2xGZWUAAAAAAAIAAAAAAAAAEVBvb2xOb3RSZWdpc3RlcmVkAAAAAAAAAwAAAAAAAAAdT3duZXJzaGlwUmVudW5jaWF0aW9uRGlzYWJsZWQAAAAAAAAEAAAAAAAAAA1FbXB0eVN3YXBQYXRoAAAAAAAABQAAAAAAAAAWSW52YWxpZFVwZ3JhZGVPcGVyYXRvcgAAAAAABg==",
         "AAAABQAAAAAAAAAAAAAAC1Bvb2xDcmVhdGVkAAAAAAEAAAAMcG9vbF9jcmVhdGVkAAAABAAAAAAAAAAEcG9vbAAAABMAAAABAAAAAAAAAAdjcmVhdG9yAAAAABMAAAABAAAAAAAAAAJpZAAAAAAABAAAAAAAAAAAAAAAC2FtcF9jb250cm9sAAAAB9AAAAAKQW1wQ29udHJvbAAAAAAAAAAAAAI=",
+        "AAAABQAAAAAAAAAAAAAADFBvb2xVcGdyYWRlZAAAAAEAAAANcG9vbF91cGdyYWRlZAAAAAAAAAIAAAAAAAAABHBvb2wAAAATAAAAAQAAAAAAAAANbmV3X3dhc21faGFzaAAAAAAAA+4AAAAgAAAAAAAAAAI=",
         "AAAABQAAAAAAAAAAAAAADlBvb2xBbXBSYW1wU2V0AAAAAAABAAAAEXBvb2xfYW1wX3JhbXBfc2V0AAAAAAAAAwAAAAAAAAAEcG9vbAAAABMAAAABAAAAAAAAAA10YXJnZXRfZmFjdG9yAAAAAAAABAAAAAAAAAAAAAAACGR1cmF0aW9uAAAABgAAAAAAAAAC",
         "AAAABQAAAAAAAAAAAAAAD1Bvb2xXYXNtVXBkYXRlZAAAAAABAAAAEXBvb2xfd2FzbV91cGRhdGVkAAAAAAAAAgAAAAAAAAAIb2xkX2hhc2gAAAPuAAAAIAAAAAAAAAAAAAAACG5ld19oYXNoAAAD7gAAACAAAAAAAAAAAg==",
         "AAAABQAAAAAAAAAAAAAAEFBvb2xQYXVzZVVwZGF0ZWQAAAABAAAAEnBvb2xfcGF1c2VfdXBkYXRlZAAAAAAAAgAAAAAAAAAEcG9vbAAAABMAAAABAAAAAAAAAAZwYXVzZWQAAAAAAAEAAAAAAAAAAg==",
         "AAAAAAAAAAAAAAAHcG9vbF9hdAAAAAABAAAAAAAAAAJpZAAAAAAABAAAAAEAAAPoAAAAEw==",
+        "AAAAAAAAAAAAAAAHdXBncmFkZQAAAAACAAAAAAAAAA1uZXdfd2FzbV9oYXNoAAAAAAAD7gAAACAAAAAAAAAACG9wZXJhdG9yAAAAEwAAAAA=",
         "AAAABQAAAAAAAAAAAAAAElBvb2xBbXBSYW1wU3RvcHBlZAAAAAAAAQAAABVwb29sX2FtcF9yYW1wX3N0b3BwZWQAAAAAAAABAAAAAAAAAARwb29sAAAAEwAAAAEAAAAC",
         "AAAAAAAAAJBSZXR1cm5zIGBTb21lKEFkZHJlc3MpYCBpZiBvd25lcnNoaXAgaXMgc2V0LCBvciBgTm9uZWAgaWYgb3duZXJzaGlwIGhhcwpiZWVuIHJlbm91bmNlZC4KCiMgQXJndW1lbnRzCgoqIGBlYCAtIEFjY2VzcyB0byB0aGUgU29yb2JhbiBlbnZpcm9ubWVudC4AAAAJZ2V0X293bmVyAAAAAAAAAAAAAAEAAAPoAAAAEw==",
         "AAAAAAAAAAAAAAAKcGF1c2VfcG9vbAAAAAAAAQAAAAAAAAAHcG9vbF9pZAAAAAAEAAAAAA==",
         "AAAAAAAAAAAAAAALY3JlYXRlX3Bvb2wAAAAACQAAAAAAAAAHY3JlYXRvcgAAAAATAAAAAAAAAAZ0b2tlbnMAAAAAA+oAAAATAAAAAAAAAAphbXBfZmFjdG9yAAAAAAAEAAAAAAAAAAthbXBfY29udHJvbAAAAAfQAAAACkFtcENvbnRyb2wAAAAAAAAAAAAIc3dhcF9mZWUAAAAGAAAAAAAAAAhtYXhfY2FwcwAAA+oAAAALAAAAAAAAAA1scF9tYXhfc3VwcGx5AAAAAAAACwAAAAAAAAAHbHBfbmFtZQAAAAAQAAAAAAAAAAlscF9zeW1ib2wAAAAAAAAQAAAAAQAAABM=",
         "AAAAAAAAAAAAAAAMbmV4dF9wb29sX2lkAAAAAAAAAAEAAAAE",
         "AAAAAAAAAAAAAAAMdW5wYXVzZV9wb29sAAAAAQAAAAAAAAAHcG9vbF9pZAAAAAAEAAAAAA==",
+        "AAAAAAAAAAAAAAAMdXBncmFkZV9wb29sAAAAAgAAAAAAAAAHcG9vbF9pZAAAAAAEAAAAAAAAAA1uZXdfd2FzbV9oYXNoAAAAAAAD7gAAACAAAAAA",
         "AAAABQAAAAAAAAAAAAAAFlBvb2xCZW5lZmljaWFyeVVwZGF0ZWQAAAAAAAEAAAAYcG9vbF9iZW5lZmljaWFyeV91cGRhdGVkAAAAAgAAAAAAAAAEcG9vbAAAABMAAAABAAAAAAAAAA9uZXdfYmVuZWZpY2lhcnkAAAAAEwAAAAAAAAAC",
         "AAAABQAAAAAAAAAAAAAAFlBvb2xQcm90b2NvbEZlZVVwZGF0ZWQAAAAAAAEAAAAZcG9vbF9wcm90b2NvbF9mZWVfdXBkYXRlZAAAAAAAAAIAAAAAAAAABHBvb2wAAAATAAAAAQAAAAAAAAAHbmV3X2ZlZQAAAAAGAAAAAAAAAAI=",
         "AAAAAAAAAAAAAAANX19jb25zdHJ1Y3RvcgAAAAAAAAQAAAAAAAAABW93bmVyAAAAAAAAEwAAAAAAAAAOcG9vbF93YXNtX2hhc2gAAAAAA+4AAAAgAAAAAAAAABRkZWZhdWx0X3Byb3RvY29sX2ZlZQAAAAYAAAAAAAAAHGRlZmF1bHRfcHJvdG9jb2xfYmVuZWZpY2lhcnkAAAATAAAAAA==",
@@ -293,11 +308,13 @@ export class Client extends ContractClient {
   }
   public readonly fromJSON = {
     pool_at: this.txFromJSON<Option<string>>,
+        upgrade: this.txFromJSON<null>,
         get_owner: this.txFromJSON<Option<string>>,
         pause_pool: this.txFromJSON<null>,
         create_pool: this.txFromJSON<string>,
         next_pool_id: this.txFromJSON<u32>,
         unpause_pool: this.txFromJSON<null>,
+        upgrade_pool: this.txFromJSON<null>,
         swap_exact_in: this.txFromJSON<i128>,
         accept_ownership: this.txFromJSON<null>,
         set_pool_amp_ramp: this.txFromJSON<null>,
