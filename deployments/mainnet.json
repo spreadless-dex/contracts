@@ -1,0 +1,90 @@
+{
+  "network": "mainnet",
+  "deployed_at": "2026-10-29T12:03:14Z",
+  "source_identity": "spreadless-mainnet",
+  "deployer": "GBAXG35EYDV6N6ET2LPE7OFGKWMGTZ3EY6NLJPHVKPLPQ3V5YUXMMTBF",
+  "contracts": {
+    "router": {
+      "address": "CDEP4I2XQAMPXGER67LJMPZTUXVR3YFA4V6GW7BSMRI3DOLAEA3DR6ER",
+      "owner": "GBAXG35EYDV6N6ET2LPE7OFGKWMGTZ3EY6NLJPHVKPLPQ3V5YUXMMTBF",
+      "pool_wasm_hash": "ae835560f930e73b3ac8ce0ab2b26543b815eb6bb61b0d87b894f4dc8dc6e8df",
+      "default_protocol_fee": 330000000,
+      "default_protocol_beneficiary": "GBAXG35EYDV6N6ET2LPE7OFGKWMGTZ3EY6NLJPHVKPLPQ3V5YUXMMTBF",
+      "permissionless_creation": true,
+      "router_wasm_hash": "aec9b485d8f2132c143ae64590367591d2bda73cf1c4dc14bb5972550f4f9ef2",
+      "deploy_tx": "4540dbd55c3bae3a68ee2a28d331b8ca427e82441f1ce45b6d02a21c3db22010",
+      "pool_wasm_upload_tx": "b8d4b0f52554b44e14402fc098ed36b8ec9ee49b7f356499501f3f38bd2a542d"
+    },
+    "pools": [
+      {
+        "id": 0,
+        "label": "usd-3pool",
+        "address": "CAZE5GVMH5332L6FEGVPPDLEPVYUFGQB7ZOCH2OKKBJCBYZQ5FGKZN7L",
+        "creator": "GBAXG35EYDV6N6ET2LPE7OFGKWMGTZ3EY6NLJPHVKPLPQ3V5YUXMMTBF",
+        "tokens": [
+          "CBSJZEIO5C7KC2SF3MKSNXXJSW5G3VTNBX4ATMKUI3B2MR4JKM4R26YF",
+          "CCCRWH6Q3FNP3I2I57BDLM5AFAT7O6OF6GKQOC6SSJNDAVRZ57SPHGU2",
+          "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75"
+        ],
+        "token_labels": [
+          "USDT0",
+          "PYUSD",
+          "USDC"
+        ],
+        "amp_factor": 100,
+        "amp_control": "ProtocolManaged",
+        "swap_fee": 100000,
+        "protocol_fee": 330000000,
+        "max_caps": [
+          "250000000000",
+          "250000000000",
+          "250000000000"
+        ],
+        "lp_max_supply": "75000000000000",
+        "lp_name": "Spreadless USD 3pool",
+        "lp_symbol": "SPR-USD3",
+        "create_tx": "36532b3ef3ca91cbfdf33b451bac323d3c02a9e256cf2cff59b217eeded73527"
+      }
+    ],
+    "assets": [
+      {
+        "label": "USDT0",
+        "asset_code": "USDT0",
+        "asset_issuer": "GATISXX6BZ6NC7IKQBY37CJD4SOZL3CYZJWXEDG6JVIY4WBS6KXJHN6Q",
+        "sac_contract": "CBSJZEIO5C7KC2SF3MKSNXXJSW5G3VTNBX4ATMKUI3B2MR4JKM4R26YF",
+        "decimals": 7,
+        "verified_via": "https://usdt0.to/.well-known/stellar.toml",
+        "clawback_enabled": true
+      },
+      {
+        "label": "PYUSD",
+        "asset_code": "PYUSD",
+        "asset_issuer": "GDQE7IXJ4HUHV6RQHIUPRJSEZE4DRS5WY577O2FY6YQ5LVWZ7JZTU2V5",
+        "sac_contract": "CCCRWH6Q3FNP3I2I57BDLM5AFAT7O6OF6GKQOC6SSJNDAVRZ57SPHGU2",
+        "decimals": 7,
+        "verified_via": "https://token-metadata.paxos.com/.well-known/stellar.toml",
+        "clawback_enabled": true
+      },
+      {
+        "label": "USDC",
+        "asset_code": "USDC",
+        "asset_issuer": "GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN",
+        "sac_contract": "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75",
+        "decimals": 7,
+        "verified_via": "https://www.circle.com/.well-known/stellar.toml",
+        "clawback_enabled": false
+      }
+    ]
+  },
+  "pool_defaults": {
+    "swap_fee": 100000
+  },
+  "network_passphrase": "Public Global Stellar Network ; September 2015",
+  "source_commit": "fc2834b",
+  "deployer_hardware": "ledger m/44'/148'/2'",
+  "notes": [
+    "Unaudited build deployed for a guarded mainnet test while the audit runs.",
+    "Owner is a single Ledger key until ownership moves to a multisig via transfer_ownership/accept_ownership.",
+    "Pool creation is permissionless; only pools listed here are operated by Spreadless."
+  ]
+}
