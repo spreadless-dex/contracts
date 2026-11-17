@@ -10,4 +10,9 @@ pub enum Error {
     OwnershipRenunciationDisabled = 4,
     EmptySwapPath = 5,
     InvalidUpgradeOperator = 6,
+    DepegGuardNotSet = 7,
+    InvalidDepegGuard = 8,
+    StalePrice = 9,
+    PriceUnavailable = 10,
+    PriceOverflow = 11,
 }

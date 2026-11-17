@@ -1,5 +1,7 @@
 use soroban_sdk::{contracttype, Address, BytesN, Env};
 
+use crate::interface::DepegGuardConfig;
+
 const DAY_IN_LEDGERS: u32 = 17_280;
 const BUMP_AMOUNT: u32 = 30 * DAY_IN_LEDGERS;
 const LIFETIME_THRESHOLD: u32 = BUMP_AMOUNT - (7 * DAY_IN_LEDGERS);
@@ -12,6 +14,8 @@ enum DataKey {
     DefaultProtocolBeneficiary,
     NextPoolId,
     PoolAt(u32),
+    // Appended: existing keys keep their encoding across the router upgrade.
+    DepegGuard(u32),
 }
 
 pub fn set_default_protocol_fee(e: &Env, fee: u64) {
@@ -98,4 +102,29 @@ pub fn extend_instance_ttl(e: &Env) {
     e.storage()
         .instance()
         .extend_ttl(LIFETIME_THRESHOLD, BUMP_AMOUNT);
+}
+
+pub fn set_depeg_guard(e: &Env, pool_id: u32, config: &DepegGuardConfig) {
+    let key = DataKey::DepegGuard(pool_id);
+    e.storage().persistent().set(&key, config);
+    e.storage()
+        .persistent()
+        .extend_ttl(&key, LIFETIME_THRESHOLD, BUMP_AMOUNT);
+}
+
+pub fn remove_depeg_guard(e: &Env, pool_id: u32) {
+    e.storage()
+        .persistent()
+        .remove(&DataKey::DepegGuard(pool_id));
+}
+
+pub fn depeg_guard(e: &Env, pool_id: u32) -> Option<DepegGuardConfig> {
+    let key = DataKey::DepegGuard(pool_id);
+    let config = e.storage().persistent().get(&key);
+    if config.is_some() {
+        e.storage()
+            .persistent()
+            .extend_ttl(&key, LIFETIME_THRESHOLD, BUMP_AMOUNT);
+    }
+    config
 }
