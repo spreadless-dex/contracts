@@ -183,6 +183,21 @@ Withdrawals stay open while paused. Only governance lifts the pause with
 `unpause_pool`; if the depeg persists, the next check pauses again, so trading
 through a depeg means removing or loosening the guard first.
 
+`scripts/depeg-keeper.sh` (`make depeg-keeper NETWORK=mainnet`) runs the check for every
+protected pool. It simulates each check for free and submits a transaction
+only when the check would pause, so its key needs no role and only a few XLM
+for fees. Run it on a schedule, or with `LOOP=1` to wake about a minute after
+each 5-minute Reflector update; set `ALERT_CMD` to be notified of pauses and
+failed checks (for example a stale feed, which leaves the pool unprotected
+until the feed recovers). Because the check is permissionless, anyone else can
+run it too.
+
+Testnet demonstration: `make testnet-depeg-evidence`, recorded in
+[`docs/testnet-depeg-guard-evidence.md`](docs/testnet-depeg-guard-evidence.md).
+Mainnet rollout: `make mainnet-depeg-upgrade DRY_RUN=1` runs every read-only
+preflight check, then `make mainnet-depeg-upgrade` asks for three Ledger
+signatures (upload, upgrade, `set_depeg_guard` on pool 0).
+
 ## Parameters
 
 Constructor arguments:

@@ -51,7 +51,7 @@ SWAP_FEE       ?= 10000000                 # 1% pool swap fee (1e9 == 100%)
 INCLUSION_FEE  ?= 100                      # max inclusion fee per tx in stroops; raise on mainnet
 
 .DEFAULT_GOAL := build
-.PHONY: all build build-pool build-router build-test-token bindings bindings-pool bindings-router optimize optimize-pool optimize-router optimize-test-token deploy deploy-router deploy-tokens deploy-testnet testnet-evidence testnet-depeg-evidence testnet-rehearsal setup keys fund clean fmt fmt-check lint help
+.PHONY: all build build-pool build-router build-test-token bindings bindings-pool bindings-router optimize optimize-pool optimize-router optimize-test-token deploy deploy-router deploy-tokens deploy-testnet testnet-evidence testnet-depeg-evidence testnet-rehearsal mainnet-depeg-upgrade depeg-keeper setup keys fund clean fmt fmt-check lint help
 
 ## all: build all production contracts
 all: build
@@ -131,6 +131,14 @@ testnet-evidence:
 ## testnet-depeg-evidence: upgrade the testnet router and demonstrate the depeg guard on live Reflector data
 testnet-depeg-evidence: build-router
 	STELLAR=$(STELLAR) NETWORK=$(NETWORK) SOURCE=$(SOURCE) TARGET_TRIPLE=$(TARGET_TRIPLE) scripts/testnet-depeg-evidence.sh
+
+## mainnet-depeg-upgrade: upgrade the mainnet router to the depeg guard and protect pool 0 (Ledger; DRY_RUN=1 signs nothing)
+mainnet-depeg-upgrade:
+	STELLAR=$(STELLAR) DRY_RUN=$(DRY_RUN) scripts/mainnet-depeg-upgrade.sh
+
+## depeg-keeper: one depeg-keeper pass over protected pools (LOOP=1 to run continuously)
+depeg-keeper:
+	STELLAR=$(STELLAR) NETWORK=$(NETWORK) LOOP=$(LOOP) scripts/depeg-keeper.sh
 
 ## testnet-rehearsal: rehearse pool lifecycle, pauses, upgrades and multisig ownership on testnet
 testnet-rehearsal:
