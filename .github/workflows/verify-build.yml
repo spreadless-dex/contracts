@@ -1,0 +1,52 @@
+name: Verify build
+
+# Rebuilds the mainnet contracts from their build commit with the pinned
+# toolchain and checks the WASM hashes (docs/verified-build.md).
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/verify-build.yml"
+      - "docs/verified-build.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: rebuild mainnet WASM
+    # The deployed WASM was built on macOS arm64; other hosts produce different bytes.
+    runs-on: macos-15
+    env:
+      BUILD_COMMIT: fc2834b50db5d8caa62085c901b0dd41d98275e1
+      POOL_HASH: ae835560f930e73b3ac8ce0ab2b26543b815eb6bb61b0d87b894f4dc8dc6e8df
+      ROUTER_HASH: aec9b485d8f2132c143ae64590367591d2bda73cf1c4dc14bb5972550f4f9ef2
+
+    steps:
+      - name: Check out the build commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.BUILD_COMMIT }}
+
+      - name: Install Rust 1.92.0
+        uses: dtolnay/rust-toolchain@1.92.0
+        with:
+          targets: wasm32v1-none
+
+      - name: Install Stellar CLI 28.1.0
+        uses: stellar/stellar-cli@v28.1.0
+
+      - name: Build
+        run: |
+          uname -sm
+          stellar --version
+          rustup run 1.92.0 stellar contract build --package spreadless-pool
+          rustup run 1.92.0 stellar contract build --package spreadless-router
+
+      - name: Compare hashes
+        run: |
+          pool=$(shasum -a 256 target/wasm32v1-none/release/spreadless_pool.wasm | cut -d' ' -f1)
+          router=$(shasum -a 256 target/wasm32v1-none/release/spreadless_router.wasm | cut -d' ' -f1)
+          echo "pool   $pool"
+          echo "router $router"
+          [ "$pool" = "$POOL_HASH" ] && [ "$router" = "$ROUTER_HASH" ]
