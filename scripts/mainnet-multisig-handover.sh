@@ -129,7 +129,12 @@ cmd_setup() {
       ok "added $s"
     fi
   done
-  acct=$(account "$addr")
+  # Horizon can trail the ledger by a few seconds.
+  for _ in 1 2 3 4 5 6; do
+    acct=$(account "$addr")
+    [[ "$(jq '[.signers[] | select(.weight > 0)] | length' <<<"$acct")" == 4 ]] && break
+    sleep 5
+  done
   for s in $SIGNERS; do
     jq -e --arg s "$s" '.signers | any(.key == $s and .weight == 1)' <<<"$acct" >/dev/null || die "signer $s missing on-chain"
   done
@@ -142,6 +147,7 @@ cmd_setup() {
   "$STELLAR" tx new set-options --network "$NETWORK" --source-account "$MULTISIG_ID" \
     --inclusion-fee "$INCLUSION_FEE" --master-weight 0 \
     --low-threshold "$THRESHOLD" --med-threshold "$THRESHOLD" --high-threshold "$THRESHOLD" >/dev/null
+  sleep 10 # let Horizon catch up before reading the result back
   require_configured "$addr"
   ok "multisig $addr: 3 signers, threshold $THRESHOLD, master key disabled"
   echo "   next: $0 test"

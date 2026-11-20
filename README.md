@@ -388,9 +388,10 @@ classic Stellar asset wrapped by SAC, in the active pool recorded in
   (`upgrade_pool`), including pools created by third parties through the
   permissionless `create_pool`. A pool's own owner cannot prevent this. There is
   no timelock: an upgrade takes effect in the transaction that submits it. On
-  mainnet the router owner is currently a single hardware-wallet key (see
-  `deployments/mainnet.json`).
-  `scripts/mainnet-multisig-handover.sh` moves it to a 2-of-3 multisig account.
+  mainnet the router owner is a 2-of-3 multisig account since 2026-11-20:
+  three signers, any two must sign, and the account's own key is disabled (see
+  `owner_multisig` in `deployments/mainnet.json`;
+  `scripts/mainnet-multisig-handover.sh` performed and verifies the handover).
 - The deployed WASM can be rebuilt byte for byte from this repository:
   [`docs/verified-build.md`](docs/verified-build.md).
 - Keep token order stable. Amount arrays, reserve arrays, caps, and minimums all
