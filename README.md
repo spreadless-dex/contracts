@@ -379,6 +379,17 @@ classic Stellar asset wrapped by SAC, in the active pool recorded in
 
 ## Safety Notes
 
+- **Not audited.** The contracts, including the ones deployed on mainnet, have
+  not been audited.
+- **Router governance can replace pool code.** The router owner can replace the
+  code of the router (`upgrade`) and of every pool registered with it
+  (`upgrade_pool`), including pools created by third parties through the
+  permissionless `create_pool`. A pool's own owner cannot prevent this. There is
+  no timelock: an upgrade takes effect in the transaction that submits it. On
+  mainnet the router owner is currently a single hardware-wallet key (see
+  `deployments/mainnet.json`).
+- The deployed WASM can be rebuilt byte for byte from this repository:
+  [`docs/verified-build.md`](docs/verified-build.md).
 - Keep token order stable. Amount arrays, reserve arrays, caps, and minimums all
   follow the sorted order returned by `get_tokens()`.
 - Set slippage limits on every deposit, withdrawal, and swap.
