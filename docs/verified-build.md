@@ -19,6 +19,11 @@ metadata, so a different version of either produces a different hash.
 | Rust | `1.92.0`, target `wasm32v1-none` |
 | Stellar CLI | `28.1.0` (`c0f4d0da891bbf214c08b8c5035ae6db80e9a3bd`) |
 | Dependencies | `Cargo.lock` at the build commit (soroban-sdk `26.1.0`) |
+| Build host | macOS on Apple silicon (`aarch64-apple-darwin`) |
+
+The build host matters: the same commit and tool versions on Linux x86-64
+produce WASM of the same size but different bytes, and therefore different
+hashes. To reproduce the deployed hashes, rebuild on macOS arm64.
 
 ## Rebuild
 
@@ -60,10 +65,11 @@ the router creates is deployed from the pool hash above.
 ## Continuous check
 
 The `Verify build` workflow (`.github/workflows/verify-build.yml`) repeats the
-rebuild on a clean Linux runner and fails if either hash differs. The steps
-above were also run on macOS (arm64).
+rebuild on a clean GitHub-hosted macOS arm64 runner and fails if either hash
+differs.
 
 ## Not covered
 
 There is no SEP-55 build attestation for these two hashes: they were built and
-uploaded from a developer machine, not from a release workflow.
+uploaded from a developer machine, not from a release workflow. They do not
+reproduce on Linux (see above).

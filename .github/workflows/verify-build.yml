@@ -15,7 +15,8 @@ permissions:
 jobs:
   verify:
     name: rebuild mainnet WASM
-    runs-on: ubuntu-latest
+    # The deployed WASM was built on macOS arm64; other hosts produce different bytes.
+    runs-on: macos-15
     env:
       BUILD_COMMIT: fc2834b50db5d8caa62085c901b0dd41d98275e1
       POOL_HASH: ae835560f930e73b3ac8ce0ab2b26543b815eb6bb61b0d87b894f4dc8dc6e8df
@@ -37,14 +38,15 @@ jobs:
 
       - name: Build
         run: |
+          uname -sm
           stellar --version
           rustup run 1.92.0 stellar contract build --package spreadless-pool
           rustup run 1.92.0 stellar contract build --package spreadless-router
 
       - name: Compare hashes
         run: |
-          pool=$(sha256sum target/wasm32v1-none/release/spreadless_pool.wasm | cut -d' ' -f1)
-          router=$(sha256sum target/wasm32v1-none/release/spreadless_router.wasm | cut -d' ' -f1)
+          pool=$(shasum -a 256 target/wasm32v1-none/release/spreadless_pool.wasm | cut -d' ' -f1)
+          router=$(shasum -a 256 target/wasm32v1-none/release/spreadless_router.wasm | cut -d' ' -f1)
           echo "pool   $pool"
           echo "router $router"
           [ "$pool" = "$POOL_HASH" ] && [ "$router" = "$ROUTER_HASH" ]
