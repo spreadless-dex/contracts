@@ -388,6 +388,7 @@ classic Stellar asset wrapped by SAC, in the active pool recorded in
   no timelock: an upgrade takes effect in the transaction that submits it. On
   mainnet the router owner is currently a single hardware-wallet key (see
   `deployments/mainnet.json`).
+  `scripts/mainnet-multisig-handover.sh` moves it to a 2-of-3 multisig account.
 - The deployed WASM can be rebuilt byte for byte from this repository:
   [`docs/verified-build.md`](docs/verified-build.md).
 - Keep token order stable. Amount arrays, reserve arrays, caps, and minimums all
