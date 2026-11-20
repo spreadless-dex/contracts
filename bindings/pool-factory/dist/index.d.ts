@@ -23,6 +23,21 @@ export declare const Errors: {
     6: {
         message: string;
     };
+    7: {
+        message: string;
+    };
+    8: {
+        message: string;
+    };
+    9: {
+        message: string;
+    };
+    10: {
+        message: string;
+    };
+    11: {
+        message: string;
+    };
 };
 /**
  * One leg of an exact-input routed swap.
@@ -33,6 +48,88 @@ export declare const Errors: {
 export interface SwapHop {
     pool_id: u32;
     token_out: string;
+}
+/**
+ * One asset on one SEP-40 oracle.
+ */
+export interface PriceFeed {
+    asset: OracleAsset;
+    oracle: string;
+}
+export interface DepegCheck {
+    /**
+   * Its smallest deviation across the confirmation readings, in bps.
+   */
+    deviation_bps: u32;
+    /**
+   * Its latest price, normalized to 14 decimals.
+   */
+    price: i128;
+    status: DepegStatus;
+    /**
+   * The token furthest from the peg (`None` when `AlreadyPaused`).
+   */
+    token: Option<string>;
+}
+export type DepegStatus = {
+    tag: "Healthy";
+    values: void;
+} | {
+    tag: "Paused";
+    values: void;
+} | {
+    tag: "AlreadyPaused";
+    values: void;
+};
+/**
+ * SEP-40 asset identifier: a Stellar asset contract or an off-chain symbol.
+ */
+export type OracleAsset = {
+    tag: "Stellar";
+    values: readonly [string];
+} | {
+    tag: "Other";
+    values: readonly [string];
+};
+/**
+ * Per-pool depeg protection, set by router governance. Pools without one are
+ * unprotected.
+ */
+export interface DepegGuardConfig {
+    /**
+   * How many of the most recent readings must all breach the threshold.
+   * `1..=10`.
+   */
+    confirmations: u32;
+    /**
+   * Pause when a token is strictly further than this from the peg, in
+   * basis points of the peg. `1..=10_000`.
+   */
+    max_deviation_bps: u32;
+    /**
+   * Reject the latest reading when it is older than this, in seconds.
+   * `1..=86_400`.
+   */
+    max_price_age: u64;
+    /**
+   * Target price, normalized to 14 decimals (1.0 == 100_000_000_000_000).
+   */
+    peg_price: i128;
+    /**
+   * One source per pool token, in the pool's token order.
+   */
+    sources: Array<TokenPriceSource>;
+}
+/**
+ * How to price one pool token in the peg's unit: `feed`, multiplied in order
+ * by each of `quotes`. With no quotes, `feed` must already be denominated in
+ * the peg's unit. With one, for example, a Stellar-DEX feed priced in USDC is
+ * multiplied by USDC's USD price. Every quote must publish at the same
+ * timestamps as `feed`. At most 2 quotes.
+ */
+export interface TokenPriceSource {
+    feed: PriceFeed;
+    quotes: Array<PriceFeed>;
 }
 /**
  * Determines whether the pool's amplification factor is permanently fixed or
@@ -101,6 +198,12 @@ export interface Client {
         pool_id: u32;
     }, options?: MethodOptions) => Promise<AssembledTransaction<null>>;
     /**
+     * Construct and simulate a check_depeg transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+     */
+    check_depeg: ({ pool_id }: {
+        pool_id: u32;
+    }, options?: MethodOptions) => Promise<AssembledTransaction<DepegCheck>>;
+    /**
      * Construct and simulate a create_pool transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
      */
     create_pool: ({ creator, tokens, amp_factor, amp_control, swap_fee, max_caps, lp_max_supply, lp_name, lp_symbol }: {
@@ -142,6 +245,19 @@ export interface Client {
         min_out: i128;
     }, options?: MethodOptions) => Promise<AssembledTransaction<i128>>;
     /**
+     * Construct and simulate a get_depeg_guard transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+     */
+    get_depeg_guard: ({ pool_id }: {
+        pool_id: u32;
+    }, options?: MethodOptions) => Promise<AssembledTransaction<Option<DepegGuardConfig>>>;
+    /**
+     * Construct and simulate a set_depeg_guard transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+     */
+    set_depeg_guard: ({ pool_id, config }: {
+        pool_id: u32;
+        config: DepegGuardConfig;
+    }, options?: MethodOptions) => Promise<AssembledTransaction<null>>;
+    /**
      * Construct and simulate a accept_ownership transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
      * Accepts a pending ownership transfer.
      *
@@ -172,6 +288,12 @@ export interface Client {
      * Construct and simulate a get_pool_wasm_hash transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
      */
     get_pool_wasm_hash: (options?: MethodOptions) => Promise<AssembledTransaction<Buffer>>;
+    /**
+     * Construct and simulate a remove_depeg_guard transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+     */
+    remove_depeg_guard: ({ pool_id }: {
+        pool_id: u32;
+    }, options?: MethodOptions) => Promise<AssembledTransaction<null>>;
     /**
      * Construct and simulate a renounce_ownership transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
      */
@@ -281,14 +403,18 @@ export declare class Client extends ContractClient {
         upgrade: (json: string) => AssembledTransaction<null>;
         get_owner: (json: string) => AssembledTransaction<Option<string>>;
         pause_pool: (json: string) => AssembledTransaction<null>;
+        check_depeg: (json: string) => AssembledTransaction<DepegCheck>;
         create_pool: (json: string) => AssembledTransaction<string>;
         next_pool_id: (json: string) => AssembledTransaction<number>;
         unpause_pool: (json: string) => AssembledTransaction<null>;
         upgrade_pool: (json: string) => AssembledTransaction<null>;
         swap_exact_in: (json: string) => AssembledTransaction<bigint>;
+        get_depeg_guard: (json: string) => AssembledTransaction<Option<DepegGuardConfig>>;
+        set_depeg_guard: (json: string) => AssembledTransaction<null>;
         accept_ownership: (json: string) => AssembledTransaction<null>;
         set_pool_amp_ramp: (json: string) => AssembledTransaction<null>;
         get_pool_wasm_hash: (json: string) => AssembledTransaction<Buffer>;
+        remove_depeg_guard: (json: string) => AssembledTransaction<null>;
         renounce_ownership: (json: string) => AssembledTransaction<null>;
         set_pool_wasm_hash: (json: string) => AssembledTransaction<null>;
         stop_pool_amp_ramp: (json: string) => AssembledTransaction<null>;

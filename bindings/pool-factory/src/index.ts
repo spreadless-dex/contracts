@@ -39,8 +39,16 @@ export const Errors = {
   3: {message:"PoolNotRegistered"},
   4: {message:"OwnershipRenunciationDisabled"},
   5: {message:"EmptySwapPath"},
-  6: {message:"InvalidUpgradeOperator"}
+  6: {message:"InvalidUpgradeOperator"},
+  7: {message:"DepegGuardNotSet"},
+  8: {message:"InvalidDepegGuard"},
+  9: {message:"StalePrice"},
+  10: {message:"PriceUnavailable"},
+  11: {message:"PriceOverflow"}
 }
+
+
+
 
 
 
@@ -62,6 +70,83 @@ export const Errors = {
 export interface SwapHop {
   pool_id: u32;
   token_out: string;
+}
+
+
+/**
+ * One asset on one SEP-40 oracle.
+ */
+export interface PriceFeed {
+  asset: OracleAsset;
+  oracle: string;
+}
+
+
+export interface DepegCheck {
+  /**
+ * Its smallest deviation across the confirmation readings, in bps.
+ */
+deviation_bps: u32;
+  /**
+ * Its latest price, normalized to 14 decimals.
+ */
+price: i128;
+  status: DepegStatus;
+  /**
+ * The token furthest from the peg (`None` when `AlreadyPaused`).
+ */
+token: Option<string>;
+}
+
+export type DepegStatus = {tag: "Healthy", values: void} | {tag: "Paused", values: void} | {tag: "AlreadyPaused", values: void};
+
+/**
+ * SEP-40 asset identifier: a Stellar asset contract or an off-chain symbol.
+ */
+export type OracleAsset = {tag: "Stellar", values: readonly [string]} | {tag: "Other", values: readonly [string]};
+
+
+/**
+ * Per-pool depeg protection, set by router governance. Pools without one are
+ * unprotected.
+ */
+export interface DepegGuardConfig {
+  /**
+ * How many of the most recent readings must all breach the threshold.
+ * `1..=10`.
+ */
+confirmations: u32;
+  /**
+ * Pause when a token is strictly further than this from the peg, in
+ * basis points of the peg. `1..=10_000`.
+ */
+max_deviation_bps: u32;
+  /**
+ * Reject the latest reading when it is older than this, in seconds.
+ * `1..=86_400`.
+ */
+max_price_age: u64;
+  /**
+ * Target price, normalized to 14 decimals (1.0 == 100_000_000_000_000).
+ */
+peg_price: i128;
+  /**
+ * One source per pool token, in the pool's token order.
+ */
+sources: Array<TokenPriceSource>;
+}
+
+
+/**
+ * How to price one pool token in the peg's unit: `feed`, multiplied in order
+ * by each of `quotes`. With no quotes, `feed` must already be denominated in
+ * the peg's unit. With one, for example, a Stellar-DEX feed priced in USDC is
+ * multiplied by USDC's USD price. Every quote must publish at the same
+ * timestamps as `feed`. At most 2 quotes.
+ */
+export interface TokenPriceSource {
+  feed: PriceFeed;
+  quotes: Array<PriceFeed>;
 }
 
 /**
@@ -113,6 +198,11 @@ export interface Client {
   pause_pool: ({pool_id}: {pool_id: u32}, options?: MethodOptions) => Promise<AssembledTransaction<null>>
 
   /**
+   * Construct and simulate a check_depeg transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+   */
+  check_depeg: ({pool_id}: {pool_id: u32}, options?: MethodOptions) => Promise<AssembledTransaction<DepegCheck>>
+
+  /**
    * Construct and simulate a create_pool transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
    */
   create_pool: ({creator, tokens, amp_factor, amp_control, swap_fee, max_caps, lp_max_supply, lp_name, lp_symbol}: {creator: string, tokens: Array<string>, amp_factor: u32, amp_control: AmpControl, swap_fee: u64, max_caps: Array<i128>, lp_max_supply: i128, lp_name: string, lp_symbol: string}, options?: MethodOptions) => Promise<AssembledTransaction<string>>
@@ -136,6 +226,16 @@ export interface Client {
    * Construct and simulate a swap_exact_in transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
    */
   swap_exact_in: ({to, token_in, path, amount_in, min_out}: {to: string, token_in: string, path: Array<SwapHop>, amount_in: i128, min_out: i128}, options?: MethodOptions) => Promise<AssembledTransaction<i128>>
+
+  /**
+   * Construct and simulate a get_depeg_guard transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+   */
+  get_depeg_guard: ({pool_id}: {pool_id: u32}, options?: MethodOptions) => Promise<AssembledTransaction<Option<DepegGuardConfig>>>
+
+  /**
+   * Construct and simulate a set_depeg_guard transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+   */
+  set_depeg_guard: ({pool_id, config}: {pool_id: u32, config: DepegGuardConfig}, options?: MethodOptions) => Promise<AssembledTransaction<null>>
 
   /**
    * Construct and simulate a accept_ownership transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
@@ -166,6 +266,11 @@ export interface Client {
    * Construct and simulate a get_pool_wasm_hash transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
    */
   get_pool_wasm_hash: (options?: MethodOptions) => Promise<AssembledTransaction<Buffer>>
+
+  /**
+   * Construct and simulate a remove_depeg_guard transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+   */
+  remove_depeg_guard: ({pool_id}: {pool_id: u32}, options?: MethodOptions) => Promise<AssembledTransaction<null>>
 
   /**
    * Construct and simulate a renounce_ownership transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
@@ -263,17 +368,21 @@ export class Client extends ContractClient {
   }
   constructor(public readonly options: ContractClientOptions) {
     super(
-      new ContractSpec([ "AAAABAAAAAAAAAAAAAAABUVycm9yAAAAAAAABgAAAAAAAAASTmV4dFBvb2xJZE92ZXJmbG93AAAAAAABAAAAAAAAABJJbnZhbGlkUHJvdG9jb2xGZWUAAAAAAAIAAAAAAAAAEVBvb2xOb3RSZWdpc3RlcmVkAAAAAAAAAwAAAAAAAAAdT3duZXJzaGlwUmVudW5jaWF0aW9uRGlzYWJsZWQAAAAAAAAEAAAAAAAAAA1FbXB0eVN3YXBQYXRoAAAAAAAABQAAAAAAAAAWSW52YWxpZFVwZ3JhZGVPcGVyYXRvcgAAAAAABg==",
+      new ContractSpec([ "AAAABAAAAAAAAAAAAAAABUVycm9yAAAAAAAACwAAAAAAAAASTmV4dFBvb2xJZE92ZXJmbG93AAAAAAABAAAAAAAAABJJbnZhbGlkUHJvdG9jb2xGZWUAAAAAAAIAAAAAAAAAEVBvb2xOb3RSZWdpc3RlcmVkAAAAAAAAAwAAAAAAAAAdT3duZXJzaGlwUmVudW5jaWF0aW9uRGlzYWJsZWQAAAAAAAAEAAAAAAAAAA1FbXB0eVN3YXBQYXRoAAAAAAAABQAAAAAAAAAWSW52YWxpZFVwZ3JhZGVPcGVyYXRvcgAAAAAABgAAAAAAAAAQRGVwZWdHdWFyZE5vdFNldAAAAAcAAAAAAAAAEUludmFsaWREZXBlZ0d1YXJkAAAAAAAACAAAAAAAAAAKU3RhbGVQcmljZQAAAAAACQAAAAAAAAAQUHJpY2VVbmF2YWlsYWJsZQAAAAoAAAAAAAAADVByaWNlT3ZlcmZsb3cAAAAAAAAL",
         "AAAABQAAAAAAAAAAAAAAC1Bvb2xDcmVhdGVkAAAAAAEAAAAMcG9vbF9jcmVhdGVkAAAABAAAAAAAAAAEcG9vbAAAABMAAAABAAAAAAAAAAdjcmVhdG9yAAAAABMAAAABAAAAAAAAAAJpZAAAAAAABAAAAAAAAAAAAAAAC2FtcF9jb250cm9sAAAAB9AAAAAKQW1wQ29udHJvbAAAAAAAAAAAAAI=",
         "AAAABQAAAAAAAAAAAAAADFBvb2xVcGdyYWRlZAAAAAEAAAANcG9vbF91cGdyYWRlZAAAAAAAAAIAAAAAAAAABHBvb2wAAAATAAAAAQAAAAAAAAANbmV3X3dhc21faGFzaAAAAAAAA+4AAAAgAAAAAAAAAAI=",
+        "AAAABQAAAAAAAAAAAAAADURlcGVnR3VhcmRTZXQAAAAAAAABAAAAD2RlcGVnX2d1YXJkX3NldAAAAAACAAAAAAAAAARwb29sAAAAEwAAAAEAAAAAAAAABmNvbmZpZwAAAAAH0AAAABBEZXBlZ0d1YXJkQ29uZmlnAAAAAAAAAAI=",
         "AAAABQAAAAAAAAAAAAAADlBvb2xBbXBSYW1wU2V0AAAAAAABAAAAEXBvb2xfYW1wX3JhbXBfc2V0AAAAAAAAAwAAAAAAAAAEcG9vbAAAABMAAAABAAAAAAAAAA10YXJnZXRfZmFjdG9yAAAAAAAABAAAAAAAAAAAAAAACGR1cmF0aW9uAAAABgAAAAAAAAAC",
         "AAAABQAAAAAAAAAAAAAAD1Bvb2xXYXNtVXBkYXRlZAAAAAABAAAAEXBvb2xfd2FzbV91cGRhdGVkAAAAAAAAAgAAAAAAAAAIb2xkX2hhc2gAAAPuAAAAIAAAAAAAAAAAAAAACG5ld19oYXNoAAAD7gAAACAAAAAAAAAAAg==",
         "AAAABQAAAAAAAAAAAAAAEFBvb2xQYXVzZVVwZGF0ZWQAAAABAAAAEnBvb2xfcGF1c2VfdXBkYXRlZAAAAAAAAgAAAAAAAAAEcG9vbAAAABMAAAABAAAAAAAAAAZwYXVzZWQAAAAAAAEAAAAAAAAAAg==",
         "AAAAAAAAAAAAAAAHcG9vbF9hdAAAAAABAAAAAAAAAAJpZAAAAAAABAAAAAEAAAPoAAAAEw==",
         "AAAAAAAAAAAAAAAHdXBncmFkZQAAAAACAAAAAAAAAA1uZXdfd2FzbV9oYXNoAAAAAAAD7gAAACAAAAAAAAAACG9wZXJhdG9yAAAAEwAAAAA=",
+        "AAAABQAAAAAAAAAAAAAAEURlcGVnR3VhcmRSZW1vdmVkAAAAAAAAAQAAABNkZXBlZ19ndWFyZF9yZW1vdmVkAAAAAAEAAAAAAAAABHBvb2wAAAATAAAAAQAAAAI=",
         "AAAABQAAAAAAAAAAAAAAElBvb2xBbXBSYW1wU3RvcHBlZAAAAAAAAQAAABVwb29sX2FtcF9yYW1wX3N0b3BwZWQAAAAAAAABAAAAAAAAAARwb29sAAAAEwAAAAEAAAAC",
         "AAAAAAAAAJBSZXR1cm5zIGBTb21lKEFkZHJlc3MpYCBpZiBvd25lcnNoaXAgaXMgc2V0LCBvciBgTm9uZWAgaWYgb3duZXJzaGlwIGhhcwpiZWVuIHJlbm91bmNlZC4KCiMgQXJndW1lbnRzCgoqIGBlYCAtIEFjY2VzcyB0byB0aGUgU29yb2JhbiBlbnZpcm9ubWVudC4AAAAJZ2V0X293bmVyAAAAAAAAAAAAAAEAAAPoAAAAEw==",
+        "AAAABQAAAEdFbWl0dGVkIHdoZW4gYGNoZWNrX2RlcGVnYCBwYXVzZXMgYSBwb29sLCBhbG9uZ3NpZGUgYFBvb2xQYXVzZVVwZGF0ZWRgLgAAAAAAAAAAE0RlcGVnUGF1c2VUcmlnZ2VyZWQAAAAAAQAAABVkZXBlZ19wYXVzZV90cmlnZ2VyZWQAAAAAAAAEAAAAAAAAAARwb29sAAAAEwAAAAEAAAAAAAAABXRva2VuAAAAAAAAEwAAAAAAAAAAAAAABXByaWNlAAAAAAAACwAAAAAAAAAAAAAADWRldmlhdGlvbl9icHMAAAAAAAAEAAAAAAAAAAI=",
         "AAAAAAAAAAAAAAAKcGF1c2VfcG9vbAAAAAAAAQAAAAAAAAAHcG9vbF9pZAAAAAAEAAAAAA==",
+        "AAAAAAAAAAAAAAALY2hlY2tfZGVwZWcAAAAAAQAAAAAAAAAHcG9vbF9pZAAAAAAEAAAAAQAAB9AAAAAKRGVwZWdDaGVjawAA",
         "AAAAAAAAAAAAAAALY3JlYXRlX3Bvb2wAAAAACQAAAAAAAAAHY3JlYXRvcgAAAAATAAAAAAAAAAZ0b2tlbnMAAAAAA+oAAAATAAAAAAAAAAphbXBfZmFjdG9yAAAAAAAEAAAAAAAAAAthbXBfY29udHJvbAAAAAfQAAAACkFtcENvbnRyb2wAAAAAAAAAAAAIc3dhcF9mZWUAAAAGAAAAAAAAAAhtYXhfY2FwcwAAA+oAAAALAAAAAAAAAA1scF9tYXhfc3VwcGx5AAAAAAAACwAAAAAAAAAHbHBfbmFtZQAAAAAQAAAAAAAAAAlscF9zeW1ib2wAAAAAAAAQAAAAAQAAABM=",
         "AAAAAAAAAAAAAAAMbmV4dF9wb29sX2lkAAAAAAAAAAEAAAAE",
         "AAAAAAAAAAAAAAAMdW5wYXVzZV9wb29sAAAAAQAAAAAAAAAHcG9vbF9pZAAAAAAEAAAAAA==",
@@ -282,11 +391,14 @@ export class Client extends ContractClient {
         "AAAABQAAAAAAAAAAAAAAFlBvb2xQcm90b2NvbEZlZVVwZGF0ZWQAAAAAAAEAAAAZcG9vbF9wcm90b2NvbF9mZWVfdXBkYXRlZAAAAAAAAAIAAAAAAAAABHBvb2wAAAATAAAAAQAAAAAAAAAHbmV3X2ZlZQAAAAAGAAAAAAAAAAI=",
         "AAAAAAAAAAAAAAANX19jb25zdHJ1Y3RvcgAAAAAAAAQAAAAAAAAABW93bmVyAAAAAAAAEwAAAAAAAAAOcG9vbF93YXNtX2hhc2gAAAAAA+4AAAAgAAAAAAAAABRkZWZhdWx0X3Byb3RvY29sX2ZlZQAAAAYAAAAAAAAAHGRlZmF1bHRfcHJvdG9jb2xfYmVuZWZpY2lhcnkAAAATAAAAAA==",
         "AAAAAAAAAAAAAAANc3dhcF9leGFjdF9pbgAAAAAAAAUAAAAAAAAAAnRvAAAAAAATAAAAAAAAAAh0b2tlbl9pbgAAABMAAAAAAAAABHBhdGgAAAPqAAAH0AAAAAdTd2FwSG9wAAAAAAAAAAAJYW1vdW50X2luAAAAAAAACwAAAAAAAAAHbWluX291dAAAAAALAAAAAQAAAAs=",
+        "AAAAAAAAAAAAAAAPZ2V0X2RlcGVnX2d1YXJkAAAAAAEAAAAAAAAAB3Bvb2xfaWQAAAAABAAAAAEAAAPoAAAH0AAAABBEZXBlZ0d1YXJkQ29uZmln",
+        "AAAAAAAAAAAAAAAPc2V0X2RlcGVnX2d1YXJkAAAAAAIAAAAAAAAAB3Bvb2xfaWQAAAAABAAAAAAAAAAGY29uZmlnAAAAAAfQAAAAEERlcGVnR3VhcmRDb25maWcAAAAA",
         "AAAABQAAAAAAAAAAAAAAGURlZmF1bHRCZW5lZmljaWFyeVVwZGF0ZWQAAAAAAAABAAAAG2RlZmF1bHRfYmVuZWZpY2lhcnlfdXBkYXRlZAAAAAACAAAAAAAAAA9vbGRfYmVuZWZpY2lhcnkAAAAAEwAAAAAAAAAAAAAAD25ld19iZW5lZmljaWFyeQAAAAATAAAAAAAAAAI=",
         "AAAABQAAAAAAAAAAAAAAGURlZmF1bHRQcm90b2NvbEZlZVVwZGF0ZWQAAAAAAAABAAAAHGRlZmF1bHRfcHJvdG9jb2xfZmVlX3VwZGF0ZWQAAAACAAAAAAAAAAdvbGRfZmVlAAAAAAYAAAAAAAAAAAAAAAduZXdfZmVlAAAAAAYAAAAAAAAAAg==",
         "AAAAAAAAATBBY2NlcHRzIGEgcGVuZGluZyBvd25lcnNoaXAgdHJhbnNmZXIuCgojIEFyZ3VtZW50cwoKKiBgZWAgLSBBY2Nlc3MgdG8gdGhlIFNvcm9iYW4gZW52aXJvbm1lbnQuCgojIEVycm9ycwoKKiBbYGNyYXRlOjpyb2xlX3RyYW5zZmVyOjpSb2xlVHJhbnNmZXJFcnJvcjo6Tm9QZW5kaW5nVHJhbnNmZXJgXSAtIElmCnRoZXJlIGlzIG5vIHBlbmRpbmcgdHJhbnNmZXIgdG8gYWNjZXB0LgoKIyBFdmVudHMKCiogdG9waWNzIC0gYFsib3duZXJzaGlwX3RyYW5zZmVyX2NvbXBsZXRlZCJdYAoqIGRhdGEgLSBgW25ld19vd25lcjogQWRkcmVzc11gAAAAEGFjY2VwdF9vd25lcnNoaXAAAAAAAAAAAA==",
         "AAAAAAAAAAAAAAARc2V0X3Bvb2xfYW1wX3JhbXAAAAAAAAADAAAAAAAAAAdwb29sX2lkAAAAAAQAAAAAAAAADXRhcmdldF9mYWN0b3IAAAAAAAAEAAAAAAAAAAhkdXJhdGlvbgAAAAYAAAAA",
         "AAAAAAAAAAAAAAASZ2V0X3Bvb2xfd2FzbV9oYXNoAAAAAAAAAAAAAQAAA+4AAAAg",
+        "AAAAAAAAAAAAAAAScmVtb3ZlX2RlcGVnX2d1YXJkAAAAAAABAAAAAAAAAAdwb29sX2lkAAAAAAQAAAAA",
         "AAAAAAAAAAAAAAAScmVub3VuY2Vfb3duZXJzaGlwAAAAAAAAAAAAAA==",
         "AAAAAAAAAAAAAAASc2V0X3Bvb2xfd2FzbV9oYXNoAAAAAAABAAAAAAAAAAhuZXdfaGFzaAAAA+4AAAAgAAAAAA==",
         "AAAAAAAAAAAAAAASc3RvcF9wb29sX2FtcF9yYW1wAAAAAAABAAAAAAAAAAdwb29sX2lkAAAAAAQAAAAA",
@@ -298,6 +410,12 @@ export class Client extends ContractClient {
         "AAAAAAAAAAAAAAAgZ2V0X2RlZmF1bHRfcHJvdG9jb2xfYmVuZWZpY2lhcnkAAAAAAAAAAQAAABM=",
         "AAAAAAAAAAAAAAAgc2V0X2RlZmF1bHRfcHJvdG9jb2xfYmVuZWZpY2lhcnkAAAABAAAAAAAAAA9uZXdfYmVuZWZpY2lhcnkAAAAAEwAAAAA=",
         "AAAAAQAAAJ5PbmUgbGVnIG9mIGFuIGV4YWN0LWlucHV0IHJvdXRlZCBzd2FwLgoKYHRva2VuX2luYCBpcyBpbXBsaWNpdDogaXQgaXMgdGhlIHJvdXRlcidzIGB0b2tlbl9pbmAgZm9yIHRoZSBmaXJzdCBob3AgYW5kCnRoZSBwcmV2aW91cyBob3AncyBgdG9rZW5fb3V0YCB0aGVyZWFmdGVyLgAAAAAAAAAAAAdTd2FwSG9wAAAAAAIAAAAAAAAAB3Bvb2xfaWQAAAAABAAAAAAAAAAJdG9rZW5fb3V0AAAAAAAAEw==",
+        "AAAAAQAAAB9PbmUgYXNzZXQgb24gb25lIFNFUC00MCBvcmFjbGUuAAAAAAAAAAAJUHJpY2VGZWVkAAAAAAAAAgAAAAAAAAAFYXNzZXQAAAAAAAfQAAAAC09yYWNsZUFzc2V0AAAAAAAAAAAGb3JhY2xlAAAAAAAT",
+        "AAAAAQAAAAAAAAAAAAAACkRlcGVnQ2hlY2sAAAAAAAQAAABASXRzIHNtYWxsZXN0IGRldmlhdGlvbiBhY3Jvc3MgdGhlIGNvbmZpcm1hdGlvbiByZWFkaW5ncywgaW4gYnBzLgAAAA1kZXZpYXRpb25fYnBzAAAAAAAABAAAACxJdHMgbGF0ZXN0IHByaWNlLCBub3JtYWxpemVkIHRvIDE0IGRlY2ltYWxzLgAAAAVwcmljZQAAAAAAAAsAAAAAAAAABnN0YXR1cwAAAAAH0AAAAAtEZXBlZ1N0YXR1cwAAAAA+VGhlIHRva2VuIGZ1cnRoZXN0IGZyb20gdGhlIHBlZyAoYE5vbmVgIHdoZW4gYEFscmVhZHlQYXVzZWRgKS4AAAAAAAV0b2tlbgAAAAAAA+gAAAAT",
+        "AAAAAgAAAAAAAAAAAAAAC0RlcGVnU3RhdHVzAAAAAAMAAAAAAAAAR0V2ZXJ5IHRva2VuIGlzIHdpdGhpbiB0aGUgdGhyZXNob2xkIChvciBub3QgYnJlYWNoZWQgb24gZXZlcnkgcmVhZGluZykuAAAAAAdIZWFsdGh5AAAAAAAAAAAoVGhpcyBjYWxsIHNldCB0aGUgcG9vbCdzIHByb3RvY29sIHBhdXNlLgAAAAZQYXVzZWQAAAAAAAAAAAA5VGhlIHBvb2wgd2FzIGFscmVhZHkgcHJvdG9jb2wtcGF1c2VkOyBubyBvcmFjbGUgd2FzIHJlYWQuAAAAAAAADUFscmVhZHlQYXVzZWQAAAA=",
+        "AAAAAgAAAElTRVAtNDAgYXNzZXQgaWRlbnRpZmllcjogYSBTdGVsbGFyIGFzc2V0IGNvbnRyYWN0IG9yIGFuIG9mZi1jaGFpbiBzeW1ib2wuAAAAAAAAAAAAAAtPcmFjbGVBc3NldAAAAAACAAAAAQAAAAAAAAAHU3RlbGxhcgAAAAABAAAAEwAAAAEAAAAAAAAABU90aGVyAAAAAAAAAQAAABE=",
+        "AAAAAQAAAFdQZXItcG9vbCBkZXBlZyBwcm90ZWN0aW9uLCBzZXQgYnkgcm91dGVyIGdvdmVybmFuY2UuIFBvb2xzIHdpdGhvdXQgb25lIGFyZQp1bnByb3RlY3RlZC4AAAAAAAAAABBEZXBlZ0d1YXJkQ29uZmlnAAAABQAAAE1Ib3cgbWFueSBvZiB0aGUgbW9zdCByZWNlbnQgcmVhZGluZ3MgbXVzdCBhbGwgYnJlYWNoIHRoZSB0aHJlc2hvbGQuCmAxLi49MTBgLgAAAAAAAA1jb25maXJtYXRpb25zAAAAAAAABAAAAGhQYXVzZSB3aGVuIGEgdG9rZW4gaXMgc3RyaWN0bHkgZnVydGhlciB0aGFuIHRoaXMgZnJvbSB0aGUgcGVnLCBpbgpiYXNpcyBwb2ludHMgb2YgdGhlIHBlZy4gYDEuLj0xMF8wMDBgLgAAABFtYXhfZGV2aWF0aW9uX2JwcwAAAAAAAAQAAABPUmVqZWN0IHRoZSBsYXRlc3QgcmVhZGluZyB3aGVuIGl0IGlzIG9sZGVyIHRoYW4gdGhpcywgaW4gc2Vjb25kcy4KYDEuLj04Nl80MDBgLgAAAAANbWF4X3ByaWNlX2FnZQAAAAAAAAYAAABFVGFyZ2V0IHByaWNlLCBub3JtYWxpemVkIHRvIDE0IGRlY2ltYWxzICgxLjAgPT0gMTAwXzAwMF8wMDBfMDAwXzAwMCkuAAAAAAAACXBlZ19wcmljZQAAAAAAAAsAAAA1T25lIHNvdXJjZSBwZXIgcG9vbCB0b2tlbiwgaW4gdGhlIHBvb2wncyB0b2tlbiBvcmRlci4AAAAAAAAHc291cmNlcwAAAAPqAAAH0AAAABBUb2tlblByaWNlU291cmNl",
+        "AAAAAQAAAU5Ib3cgdG8gcHJpY2Ugb25lIHBvb2wgdG9rZW4gaW4gdGhlIHBlZydzIHVuaXQ6IGBmZWVkYCwgbXVsdGlwbGllZCBpbiBvcmRlcgpieSBlYWNoIG9mIGBxdW90ZXNgLiBXaXRoIG5vIHF1b3RlcywgYGZlZWRgIG11c3QgYWxyZWFkeSBiZSBkZW5vbWluYXRlZCBpbgp0aGUgcGVnJ3MgdW5pdC4gV2l0aCBvbmUsIGZvciBleGFtcGxlLCBhIFN0ZWxsYXItREVYIGZlZWQgcHJpY2VkIGluIFVTREMgaXMKbXVsdGlwbGllZCBieSBVU0RDJ3MgVVNEIHByaWNlLiBFdmVyeSBxdW90ZSBtdXN0IHB1Ymxpc2ggYXQgdGhlIHNhbWUKdGltZXN0YW1wcyBhcyBgZmVlZGAuIEF0IG1vc3QgMiBxdW90ZXMuAAAAAAAAAAAAEFRva2VuUHJpY2VTb3VyY2UAAAACAAAAAAAAAARmZWVkAAAH0AAAAAlQcmljZUZlZWQAAAAAAAAAAAAABnF1b3RlcwAAAAAD6gAAB9AAAAAJUHJpY2VGZWVkAAAA",
         "AAAAAgAAAHpEZXRlcm1pbmVzIHdoZXRoZXIgdGhlIHBvb2wncyBhbXBsaWZpY2F0aW9uIGZhY3RvciBpcyBwZXJtYW5lbnRseSBmaXhlZCBvcgpkZWxlZ2F0ZWQgdG8gdGhlIGltbXV0YWJsZSBwcm90b2NvbCBjb250cm9sbGVyLgAAAAAAAAAAAApBbXBDb250cm9sAAAAAAACAAAAAAAAAAAAAAAGTG9ja2VkAAAAAAAAAAAAAAAAAA9Qcm90b2NvbE1hbmFnZWQA",
         "AAAABAAAAAAAAAAAAAAAEVJvbGVUcmFuc2ZlckVycm9yAAAAAAAABAAAAAAAAAARTm9QZW5kaW5nVHJhbnNmZXIAAAAAAAiYAAAAAAAAABZJbnZhbGlkTGl2ZVVudGlsTGVkZ2VyAAAAAAiZAAAAAAAAABVJbnZhbGlkUGVuZGluZ0FjY291bnQAAAAAAAiaAAAAAAAAAA9UcmFuc2ZlckV4cGlyZWQAAAAImw==",
         "AAAABAAAAAAAAAAAAAAADE93bmFibGVFcnJvcgAAAAMAAAAAAAAAC093bmVyTm90U2V0AAAACDQAAAAAAAAAElRyYW5zZmVySW5Qcm9ncmVzcwAAAAAINQAAAAAAAAAPT3duZXJBbHJlYWR5U2V0AAAACDY=",
@@ -311,14 +429,18 @@ export class Client extends ContractClient {
         upgrade: this.txFromJSON<null>,
         get_owner: this.txFromJSON<Option<string>>,
         pause_pool: this.txFromJSON<null>,
+        check_depeg: this.txFromJSON<DepegCheck>,
         create_pool: this.txFromJSON<string>,
         next_pool_id: this.txFromJSON<u32>,
         unpause_pool: this.txFromJSON<null>,
         upgrade_pool: this.txFromJSON<null>,
         swap_exact_in: this.txFromJSON<i128>,
+        get_depeg_guard: this.txFromJSON<Option<DepegGuardConfig>>,
+        set_depeg_guard: this.txFromJSON<null>,
         accept_ownership: this.txFromJSON<null>,
         set_pool_amp_ramp: this.txFromJSON<null>,
         get_pool_wasm_hash: this.txFromJSON<Buffer>,
+        remove_depeg_guard: this.txFromJSON<null>,
         renounce_ownership: this.txFromJSON<null>,
         set_pool_wasm_hash: this.txFromJSON<null>,
         stop_pool_amp_ramp: this.txFromJSON<null>,

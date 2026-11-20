@@ -155,6 +155,48 @@ Router operations:
   place
 - `upgrade(new_wasm_hash, operator)`: replace the router's own code in place;
   `operator` must be the owner
+- `set_depeg_guard(pool_id, config)`, `remove_depeg_guard(pool_id)` and
+  `get_depeg_guard(pool_id)`: opt a pool in or out of depeg protection
+- `check_depeg(pool_id) -> DepegCheck`: permissionless depeg check (below)
+
+### Depeg guard
+
+Swaps never read an oracle. Protection is optional per pool: governance opts a
+pool in with `set_depeg_guard`, naming a SEP-40 feed (Reflector) for each pool
+token, optionally multiplied through up to two quote feeds (for example a
+Stellar-DEX price in USDC times USDC/USD), plus a peg price, a deviation
+threshold, a maximum price age and a number of confirmation readings.
+
+Anyone may call `check_depeg(pool_id)`. It reads every token's most recent
+`confirmations` readings and:
+
+- reverts `StalePrice` if any feed's latest reading is older than
+  `max_price_age`, and `PriceUnavailable` if readings are missing,
+  non-positive, out of order, or a quote has no reading at the same timestamp
+  (stale data is never acted on);
+- sets the pool's protocol pause when some token is strictly further than
+  `max_deviation_bps` from the peg on every confirmation reading;
+- returns `AlreadyPaused` without reading oracles when the protocol pause is
+  already set, so keepers can call it on every update.
+
+Withdrawals stay open while paused. Only governance lifts the pause with
+`unpause_pool`; if the depeg persists, the next check pauses again, so trading
+through a depeg means removing or loosening the guard first.
+
+`scripts/depeg-keeper.sh` (`make depeg-keeper NETWORK=mainnet`) runs the check for every
+protected pool. It simulates each check for free and submits a transaction
+only when the check would pause, so its key needs no role and only a few XLM
+for fees. Run it on a schedule, or with `LOOP=1` to wake about a minute after
+each 5-minute Reflector update; set `ALERT_CMD` to be notified of pauses and
+failed checks (for example a stale feed, which leaves the pool unprotected
+until the feed recovers). Because the check is permissionless, anyone else can
+run it too.
+
+Testnet demonstration: `make testnet-depeg-evidence`, recorded in
+[`docs/testnet-depeg-guard-evidence.md`](docs/testnet-depeg-guard-evidence.md).
+Mainnet rollout: `make mainnet-depeg-upgrade DRY_RUN=1` runs every read-only
+preflight check, then `make mainnet-depeg-upgrade` asks for three Ledger
+signatures (upload, upgrade, `set_depeg_guard` on pool 0).
 
 ## Parameters
 

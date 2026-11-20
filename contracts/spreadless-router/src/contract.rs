@@ -8,8 +8,11 @@ use stellar_access::ownable::{self, Ownable};
 use stellar_contract_utils::upgradeable::{self, Upgradeable, UpgradeableClient};
 use stellar_macros::only_owner;
 
+use crate::depeg;
 use crate::error::Error;
-use crate::interface::{AmpControl, SpreadlessRouterInterface, SwapHop};
+use crate::interface::{
+    AmpControl, DepegCheck, DepegGuardConfig, DepegStatus, SpreadlessRouterInterface, SwapHop,
+};
 use crate::storage;
 
 const PROTOCOL_FEE_SCALE: u64 = 1_000_000_000;
@@ -92,6 +95,32 @@ pub struct PoolUpgraded {
     #[topic]
     pub pool: Address,
     pub new_wasm_hash: BytesN<32>,
+}
+
+#[contractevent]
+#[derive(Clone)]
+pub struct DepegGuardSet {
+    #[topic]
+    pub pool: Address,
+    pub config: DepegGuardConfig,
+}
+
+#[contractevent]
+#[derive(Clone)]
+pub struct DepegGuardRemoved {
+    #[topic]
+    pub pool: Address,
+}
+
+/// Emitted when `check_depeg` pauses a pool, alongside `PoolPauseUpdated`.
+#[contractevent]
+#[derive(Clone)]
+pub struct DepegPauseTriggered {
+    #[topic]
+    pub pool: Address,
+    pub token: Address,
+    pub price: i128,
+    pub deviation_bps: u32,
 }
 
 #[contract]
@@ -321,6 +350,89 @@ impl SpreadlessRouterInterface for SpreadlessRouter {
             paused: false,
         }
         .publish(&e);
+    }
+
+    #[only_owner]
+    fn set_depeg_guard(e: Env, pool_id: u32, config: DepegGuardConfig) {
+        let pool = registered_pool(&e, pool_id);
+        let token_count = SpreadlessPoolInterfaceClient::new(&e, &pool)
+            .get_tokens()
+            .len();
+        depeg::validate_config(&e, &config, token_count);
+        storage::set_depeg_guard(&e, pool_id, &config);
+        DepegGuardSet { pool, config }.publish(&e);
+    }
+
+    #[only_owner]
+    fn remove_depeg_guard(e: Env, pool_id: u32) {
+        let pool = registered_pool(&e, pool_id);
+        if storage::depeg_guard(&e, pool_id).is_none() {
+            panic_with_error!(&e, Error::DepegGuardNotSet);
+        }
+        storage::remove_depeg_guard(&e, pool_id);
+        DepegGuardRemoved { pool }.publish(&e);
+    }
+
+    fn get_depeg_guard(e: Env, pool_id: u32) -> Option<DepegGuardConfig> {
+        storage::depeg_guard(&e, pool_id)
+    }
+
+    fn check_depeg(e: Env, pool_id: u32) -> DepegCheck {
+        let pool = registered_pool(&e, pool_id);
+        let config = storage::depeg_guard(&e, pool_id)
+            .unwrap_or_else(|| panic_with_error!(&e, Error::DepegGuardNotSet));
+        let pool_client = SpreadlessPoolInterfaceClient::new(&e, &pool);
+
+        if pool_client.is_protocol_paused() {
+            return DepegCheck {
+                status: DepegStatus::AlreadyPaused,
+                token: None,
+                price: 0,
+                deviation_bps: 0,
+            };
+        }
+
+        // Every token is read, so stale or missing data on any feed rejects the
+        // whole check rather than silently skipping that token.
+        let tokens = pool_client.get_tokens();
+        let mut worst: Option<(Address, depeg::TokenDeviation)> = None;
+        for (token, source) in tokens.iter().zip(config.sources.iter()) {
+            let deviation = depeg::token_deviation(&e, &config, &source);
+            let replace = match &worst {
+                None => true,
+                Some((_, current)) => {
+                    (deviation.breached, deviation.deviation_bps)
+                        > (current.breached, current.deviation_bps)
+                }
+            };
+            if replace {
+                worst = Some((token, deviation));
+            }
+        }
+        let (token, deviation) =
+            worst.unwrap_or_else(|| panic_with_error!(&e, Error::InvalidDepegGuard));
+
+        let status = if deviation.breached {
+            pool_client.protocol_pause();
+            DepegPauseTriggered {
+                pool: pool.clone(),
+                token: token.clone(),
+                price: deviation.price,
+                deviation_bps: deviation.deviation_bps,
+            }
+            .publish(&e);
+            PoolPauseUpdated { pool, paused: true }.publish(&e);
+            DepegStatus::Paused
+        } else {
+            DepegStatus::Healthy
+        };
+
+        DepegCheck {
+            status,
+            token: Some(token),
+            price: deviation.price,
+            deviation_bps: deviation.deviation_bps,
+        }
     }
 }
 
