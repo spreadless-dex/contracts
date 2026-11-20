@@ -67,6 +67,7 @@ and network passphrases still come from the consuming application.
 | USD 3pool (pool 0) | `CAZE5GVMH5332L6FEGVPPDLEPVYUFGQB7ZOCH2OKKBJCBYZQ5FGKZN7L` |
 | Pool tokens (canonical order) | USDT0 `CBSJZEIO…R26YF`, PYUSD `CCCRWH6Q…PHGU2`, USDC `CCW67TSZ…SJMI75` |
 | Limits | 25,000 cap per token, 75,000 LP max supply, amp 100, 0.01% swap fee |
+| Depeg guard (pool 0) | pauses swaps and deposits when a token is more than 2% from 1 USD on 3 consecutive Reflector readings; config in `deployments.mainnet.contracts.pools[0].depeg_guard` |
 | Network passphrase | `Public Global Stellar Network ; September 2015` |
 
 All three tokens are issuer-controlled stablecoins: their issuers can freeze

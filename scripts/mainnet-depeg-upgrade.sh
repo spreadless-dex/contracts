@@ -49,6 +49,13 @@ step() { printf '\n== %s\n' "$*"; }
 ok() { printf '   ok: %s\n' "$*"; }
 die() { printf '   ABORT: %s\n' "$*" >&2; exit 1; }
 
+# Ask for a typed confirmation; CONFIRM=<word> answers it where there is no terminal.
+confirm() { # word
+  local answer="${CONFIRM:-}"
+  [[ -n "$answer" ]] || read -r -p "   Type $1 to continue: " answer || true
+  [[ "$answer" == "$1" ]] || die "not confirmed (type $1, or run with CONFIRM=$1)"
+}
+
 ROUTER=$(jq -r '.contracts.router.address' "$DEPLOYMENTS_FILE")
 OWNER=$("$STELLAR" keys public-key "$SOURCE")
 
@@ -184,8 +191,7 @@ fi
 
 printf '\nAbout to sign on mainnet with %s:\n  1. upload router WASM %s\n  2. upgrade router %s in place\n  3. set_depeg_guard on pool %s (%s bps, %ss, %s readings)\n' \
   "$OWNER" "${NEW_ROUTER_HASH:0:12}…" "$ROUTER" "$POOL_ID" "$MAX_DEVIATION_BPS" "$MAX_PRICE_AGE" "$CONFIRMATIONS"
-read -r -p "Type UPGRADE to continue: " answer
-[[ "$answer" == UPGRADE ]] || die "not confirmed"
+confirm UPGRADE
 
 upload_tx="" upgrade_tx="" guard_tx=""
 
@@ -209,7 +215,8 @@ if [[ "$(onchain_router_hash)" != "$NEW_ROUTER_HASH" ]]; then
 else
   step "1-2. router already upgraded; skipping"
 fi
-[[ "$(view "$ROUTER" next_pool_id)" == 1 ]] || die "next_pool_id changed"
+# Pool creation is permissionless, so the count may be above 1; pool 0 must be unchanged.
+[[ "$(view "$ROUTER" next_pool_id)" -ge 1 ]] || die "pool registry is empty after the upgrade"
 [[ "$(view "$ROUTER" pool_at --id "$POOL_ID" | tr -d '"')" == "$pool" ]] || die "pool registry changed"
 ok "registry preserved"
 

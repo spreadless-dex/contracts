@@ -14,13 +14,23 @@ permissions:
 
 jobs:
   verify:
-    name: rebuild mainnet WASM
+    name: rebuild mainnet WASM (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: current router and pool
+            commit: ccbafc2b1738c316780a838376745821855d257a
+            router: a1bb2f7afb71db36706293c0a3839418f334d9f321e14e2c98a8dede14a76f1d
+          - name: previous router and pool
+            commit: fc2834b50db5d8caa62085c901b0dd41d98275e1
+            router: aec9b485d8f2132c143ae64590367591d2bda73cf1c4dc14bb5972550f4f9ef2
     # The deployed WASM was built on macOS arm64; other hosts produce different bytes.
     runs-on: macos-15
     env:
-      BUILD_COMMIT: fc2834b50db5d8caa62085c901b0dd41d98275e1
+      BUILD_COMMIT: ${{ matrix.commit }}
       POOL_HASH: ae835560f930e73b3ac8ce0ab2b26543b815eb6bb61b0d87b894f4dc8dc6e8df
-      ROUTER_HASH: aec9b485d8f2132c143ae64590367591d2bda73cf1c4dc14bb5972550f4f9ef2
+      ROUTER_HASH: ${{ matrix.router }}
 
     steps:
       - name: Check out the build commit

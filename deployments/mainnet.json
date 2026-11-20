@@ -11,9 +11,19 @@
       "default_protocol_fee": 330000000,
       "default_protocol_beneficiary": "GBAXG35EYDV6N6ET2LPE7OFGKWMGTZ3EY6NLJPHVKPLPQ3V5YUXMMTBF",
       "permissionless_creation": true,
-      "router_wasm_hash": "aec9b485d8f2132c143ae64590367591d2bda73cf1c4dc14bb5972550f4f9ef2",
+      "router_wasm_hash": "a1bb2f7afb71db36706293c0a3839418f334d9f321e14e2c98a8dede14a76f1d",
       "deploy_tx": "4540dbd55c3bae3a68ee2a28d331b8ca427e82441f1ce45b6d02a21c3db22010",
-      "pool_wasm_upload_tx": "b8d4b0f52554b44e14402fc098ed36b8ec9ee49b7f356499501f3f38bd2a542d"
+      "pool_wasm_upload_tx": "b8d4b0f52554b44e14402fc098ed36b8ec9ee49b7f356499501f3f38bd2a542d",
+      "previous_router_wasm_hashes": [
+        "aec9b485d8f2132c143ae64590367591d2bda73cf1c4dc14bb5972550f4f9ef2"
+      ],
+      "depeg_guard_upgrade": {
+        "source_commit": "eaaa821",
+        "upgraded_at": "2026-11-20T18:12:18Z",
+        "wasm_upload_tx": "573b7f6a61a0bff2a9395abadbb024b2294921509b0dddd1c1446de9c41ac6a7",
+        "upgrade_tx": "796d520680b43a97c617083d96fea5faa15304268dfae6e6cfda2c92ec384dab",
+        "build_commit": "ccbafc2b1738c316780a838376745821855d257a"
+      }
     },
     "pools": [
       {
@@ -43,7 +53,59 @@
         "lp_max_supply": "75000000000000",
         "lp_name": "Spreadless USD 3pool",
         "lp_symbol": "SPR-USD3",
-        "create_tx": "36532b3ef3ca91cbfdf33b451bac323d3c02a9e256cf2cff59b217eeded73527"
+        "create_tx": "36532b3ef3ca91cbfdf33b451bac323d3c02a9e256cf2cff59b217eeded73527",
+        "depeg_guard": {
+          "config": {
+            "sources": [
+              {
+                "feed": {
+                  "oracle": "CALI2BYU2JE6WVRUFYTS6MSBNEHGJ35P4AVCZYF3B6QOE3QKOB2PLE6M",
+                  "asset": {
+                    "Stellar": "CBSJZEIO5C7KC2SF3MKSNXXJSW5G3VTNBX4ATMKUI3B2MR4JKM4R26YF"
+                  }
+                },
+                "quotes": [
+                  {
+                    "oracle": "CAFJZQWSED6YAWZU3GWRTOCNPPCGBN32L7QV43XX5LZLFTK6JLN34DLN",
+                    "asset": {
+                      "Other": "USDC"
+                    }
+                  }
+                ]
+              },
+              {
+                "feed": {
+                  "oracle": "CALI2BYU2JE6WVRUFYTS6MSBNEHGJ35P4AVCZYF3B6QOE3QKOB2PLE6M",
+                  "asset": {
+                    "Stellar": "CCCRWH6Q3FNP3I2I57BDLM5AFAT7O6OF6GKQOC6SSJNDAVRZ57SPHGU2"
+                  }
+                },
+                "quotes": [
+                  {
+                    "oracle": "CAFJZQWSED6YAWZU3GWRTOCNPPCGBN32L7QV43XX5LZLFTK6JLN34DLN",
+                    "asset": {
+                      "Other": "USDC"
+                    }
+                  }
+                ]
+              },
+              {
+                "feed": {
+                  "oracle": "CAFJZQWSED6YAWZU3GWRTOCNPPCGBN32L7QV43XX5LZLFTK6JLN34DLN",
+                  "asset": {
+                    "Other": "USDC"
+                  }
+                },
+                "quotes": []
+              }
+            ],
+            "peg_price": "100000000000000",
+            "max_deviation_bps": 200,
+            "max_price_age": 900,
+            "confirmations": 3
+          },
+          "set_tx": "1cae9fdf9d9fe4083ce384b9b46c5e7fec0965b1069eecfbd26ddb74ef31388d"
+        }
       }
     ],
     "assets": [
@@ -85,6 +147,7 @@
   "notes": [
     "Not audited. Guarded mainnet deployment.",
     "Owner is a single Ledger key until ownership moves to a multisig via transfer_ownership/accept_ownership.",
-    "Pool creation is permissionless; only pools listed here are operated by Spreadless."
+    "Pool creation is permissionless; only pools listed here are operated by Spreadless.",
+    "Router upgraded in place to the depeg-guard build; pool 0 protected (200 bps, 900 s, 3 Reflector readings). Run scripts/depeg-keeper.sh to watch it."
   ]
 }
