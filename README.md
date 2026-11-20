@@ -194,9 +194,11 @@ run it too.
 
 Testnet demonstration: `make testnet-depeg-evidence`, recorded in
 [`docs/testnet-depeg-guard-evidence.md`](docs/testnet-depeg-guard-evidence.md).
-Mainnet rollout: `make mainnet-depeg-upgrade DRY_RUN=1` runs every read-only
-preflight check, then `make mainnet-depeg-upgrade` asks for three Ledger
-signatures (upload, upgrade, `set_depeg_guard` on pool 0).
+Mainnet: live since 2026-11-20. The router runs the depeg-guard build and the
+USD 3pool (pool 0) is protected at 200 bps, 900 s, 3 readings; transactions and
+the full configuration are in `deployments/mainnet.json`. Other mainnet pools
+are unprotected unless governance sets a guard for them. The rollout was done
+with `make mainnet-depeg-upgrade` (`DRY_RUN=1` runs only the read-only preflight).
 
 ## Parameters
 

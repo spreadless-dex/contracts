@@ -41,6 +41,13 @@ step() { printf '\n== %s\n' "$*"; }
 ok() { printf '   ok: %s\n' "$*"; }
 die() { printf '   ABORT: %s\n' "$*" >&2; exit 1; }
 
+# Ask for a typed confirmation; CONFIRM=<word> answers it where there is no terminal.
+confirm() { # word
+  local answer="${CONFIRM:-}"
+  [[ -n "$answer" ]] || read -r -p "   Type $1 to continue: " answer || true
+  [[ "$answer" == "$1" ]] || die "not confirmed (type $1, or run with CONFIRM=$1)"
+}
+
 ROUTER=$(jq -r '.contracts.router.address' "$DEPLOYMENTS_FILE")
 LEDGER_ADDR=$("$STELLAR" keys public-key "$LEDGER_ID")
 SIGNERS="$LEDGER_ADDR $SIGNER_2 $SIGNER_3"
@@ -131,8 +138,7 @@ cmd_setup() {
   step "set thresholds to $THRESHOLD and disable the master key"
   printf '   After this, %s can only act with %s of these signatures:\n' "$addr" "$THRESHOLD"
   for s in $SIGNERS; do printf '     %s\n' "$s"; done
-  read -r -p "   Type LOCK to continue: " answer
-  [[ "$answer" == LOCK ]] || die "not confirmed"
+  confirm LOCK
   "$STELLAR" tx new set-options --network "$NETWORK" --source-account "$MULTISIG_ID" \
     --inclusion-fee "$INCLUSION_FEE" --master-weight 0 \
     --low-threshold "$THRESHOLD" --med-threshold "$THRESHOLD" --high-threshold "$THRESHOLD" >/dev/null
@@ -202,8 +208,7 @@ cmd_transfer() {
 
   step "1. Ledger proposes the transfer (it stays owner until the multisig accepts)"
   printf '   new owner: %s\n' "$addr"
-  read -r -p "   Type TRANSFER to continue: " answer
-  [[ "$answer" == TRANSFER ]] || die "not confirmed"
+  confirm TRANSFER
   latest=$("$STELLAR" ledger latest --network "$NETWORK" --output json 2>/dev/null | jq -r '.sequence')
   live_until=$((latest + 34560)) # ~2 days to collect the second signature
   echo "   -> confirm on the Ledger" >&2
