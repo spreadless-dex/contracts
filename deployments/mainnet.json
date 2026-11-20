@@ -6,7 +6,7 @@
   "contracts": {
     "router": {
       "address": "CDEP4I2XQAMPXGER67LJMPZTUXVR3YFA4V6GW7BSMRI3DOLAEA3DR6ER",
-      "owner": "GBAXG35EYDV6N6ET2LPE7OFGKWMGTZ3EY6NLJPHVKPLPQ3V5YUXMMTBF",
+      "owner": "GDDES6R4Q5UZNILXXUK77ELHL53GP5TXHW6CYAKDVTUFMKHWDOCN6CFC",
       "pool_wasm_hash": "ae835560f930e73b3ac8ce0ab2b26543b815eb6bb61b0d87b894f4dc8dc6e8df",
       "default_protocol_fee": 330000000,
       "default_protocol_beneficiary": "GBAXG35EYDV6N6ET2LPE7OFGKWMGTZ3EY6NLJPHVKPLPQ3V5YUXMMTBF",
@@ -23,6 +23,20 @@
         "wasm_upload_tx": "573b7f6a61a0bff2a9395abadbb024b2294921509b0dddd1c1446de9c41ac6a7",
         "upgrade_tx": "796d520680b43a97c617083d96fea5faa15304268dfae6e6cfda2c92ec384dab",
         "build_commit": "ccbafc2b1738c316780a838376745821855d257a"
+      },
+      "owner_multisig": {
+        "threshold": 2,
+        "signers": [
+          "GBAXG35EYDV6N6ET2LPE7OFGKWMGTZ3EY6NLJPHVKPLPQ3V5YUXMMTBF",
+          "GAXTKDSCB23GQZEEVF6RQDFPASJX3IUBX4LFGVXY5SFYPNUYGKJ6TUW3",
+          "GBQVQBPNRFVQYDYHBKNL2BJBPTFWGGZFZ2KFM2XN7ZVKAEMA6GUZ6N2N"
+        ],
+        "master_key_disabled": true,
+        "previous_owner": "GBAXG35EYDV6N6ET2LPE7OFGKWMGTZ3EY6NLJPHVKPLPQ3V5YUXMMTBF",
+        "transferred_at": "2026-11-20T20:05:51Z",
+        "test_payment_tx": "52414f017a9569de879568d7f9997802fb8e4866401f9635ad00c8f555bedcf5",
+        "transfer_ownership_tx": "4a08c93f2c690d553742b08de7b3e1405a1ae9578de6298cec2b5e0a07dc8675",
+        "accept_ownership_tx": "89695a7cc27a6470197cfed496b9e74017a99c6d9f02cece5f847c23b56cce82"
       }
     },
     "pools": [
@@ -146,8 +160,8 @@
   "deployer_hardware": "ledger m/44'/148'/2'",
   "notes": [
     "Not audited. Guarded mainnet deployment.",
-    "Owner is a single Ledger key until ownership moves to a multisig via transfer_ownership/accept_ownership.",
     "Pool creation is permissionless; only pools listed here are operated by Spreadless.",
+    "Router owner is a 2-of-3 classic multisig account; the protocol fee beneficiary is unchanged.",
     "Router upgraded in place to the depeg-guard build; pool 0 protected (200 bps, 900 s, 3 Reflector readings). Run scripts/depeg-keeper.sh to watch it."
   ]
 }
