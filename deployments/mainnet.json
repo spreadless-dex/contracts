@@ -83,7 +83,7 @@
   "source_commit": "fc2834b",
   "deployer_hardware": "ledger m/44'/148'/2'",
   "notes": [
-    "Unaudited build deployed for a guarded mainnet test while the audit runs.",
+    "Not audited. Guarded mainnet deployment.",
     "Owner is a single Ledger key until ownership moves to a multisig via transfer_ownership/accept_ownership.",
     "Pool creation is permissionless; only pools listed here are operated by Spreadless."
   ]

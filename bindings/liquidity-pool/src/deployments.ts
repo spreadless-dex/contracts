@@ -133,7 +133,7 @@ export const deployments: Record<DeploymentNetwork, NetworkDeployment> = {
     "source_commit": "fc2834b",
     "deployer_hardware": "ledger m/44'/148'/2'",
     "notes": [
-      "Unaudited build deployed for a guarded mainnet test while the audit runs.",
+      "Not audited. Guarded mainnet deployment.",
       "Owner is a single Ledger key until ownership moves to a multisig via transfer_ownership/accept_ownership.",
       "Pool creation is permissionless; only pools listed here are operated by Spreadless."
     ]
@@ -264,7 +264,8 @@ export const deployments: Record<DeploymentNetwork, NetworkDeployment> = {
         "pool_wasm_hash": "ae835560f930e73b3ac8ce0ab2b26543b815eb6bb61b0d87b894f4dc8dc6e8df",
         "default_protocol_fee": 330000000,
         "default_protocol_beneficiary": "GBQNJHJJRTKU43GOW34BQXLMTRZFOZERDGQPBUZGXTJK3HQEEDXXL73B",
-        "permissionless_creation": true
+        "permissionless_creation": true,
+        "router_wasm_hash": "a1bb2f7afb71db36706293c0a3839418f334d9f321e14e2c98a8dede14a76f1d"
       },
       "tokens": [
         {
@@ -879,7 +880,8 @@ export const deployments: Record<DeploymentNetwork, NetworkDeployment> = {
       "The custom test token mint(to, amount) entrypoint is intentionally open and uncapped.",
       "The SUSD token is a testnet Stellar classic asset wrapped by a SAC contract.",
       "Pool token order is canonical and may differ from the display labels above.",
-      "The active liquidity_pool is the 4-token USD-variant pool including the SUSD SAC."
+      "The active liquidity_pool is the 4-token USD-variant pool including the SUSD SAC.",
+      "Router upgraded in place to the depeg-guard build (a1bb2f7a…). Depeg guard demonstration pool id 8 (sUSDC/sUSDT, Reflector testnet feed CCYOZJCOPG34LLQQ7N24YXBM7LL62R7ONMZ3G6WZAAYPB5OYKOMJRN63): see docs/testnet-depeg-guard-evidence.md. Pools 5-7 are leftovers from aborted evidence runs."
     ]
   }
 };

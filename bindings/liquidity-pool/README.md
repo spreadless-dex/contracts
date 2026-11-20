@@ -55,8 +55,9 @@ and network passphrases still come from the consuming application.
 
 ### Mainnet
 
-> **Unaudited.** The mainnet contracts are a guarded test deployment while the
-> audit runs. Pool creation through the router is permissionless; only the pools
+> **Not audited.** The mainnet contracts are a guarded deployment and have not
+> been audited. The router owner can replace the code of every pool registered
+> with the router, including pools created by third parties. Pool creation through the router is permissionless; only the pools
 > listed in [`deployments/mainnet.json`](https://github.com/spreadless-dex/contracts/blob/main/deployments/mainnet.json)
 > are operated by Spreadless.
 
